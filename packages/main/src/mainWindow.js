@@ -5,6 +5,8 @@ import { URL } from 'url';
 async function createWindow() {
 	const browserWindow = new BrowserWindow({
 		show: false,
+		backgroundColor: '#090909',
+		titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
 		webPreferences: {
 			nodeIntegration: false,
 			contextIsolation: true,

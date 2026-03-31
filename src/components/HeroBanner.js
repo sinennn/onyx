@@ -1,4 +1,4 @@
-function HeroBanner({ comic, onOpen }) {
+function HeroBanner({ comic, onOpen, onImport }) {
   if (!comic) {
     return (
       <section className="relative h-[340px] overflow-hidden rounded-[28px] border border-dashed border-white/10 bg-[linear-gradient(135deg,rgba(79,142,247,0.12),rgba(240,98,42,0.08))] p-10">
@@ -11,7 +11,7 @@ function HeroBanner({ comic, onOpen }) {
           </p>
           <button
             type="button"
-            onClick={() => window.comicAPI.openFilePicker()}
+            onClick={onImport}
             className="mt-6 inline-flex w-fit items-center rounded-full bg-accent px-5 py-3 text-sm font-semibold text-white transition-colors duration-150 hover:bg-[#669cf7]"
           >
             Import Comics

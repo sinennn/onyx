@@ -8,7 +8,7 @@
     "name": "Sinen Ernest"
   },
   "scripts": {
-    "dev": "concurrently \"vite\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "dev": "node scripts/dev.mjs",
     "build": "vite build && electron-builder",
     "start": "npm run dev"
   },

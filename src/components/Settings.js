@@ -1,72 +1,130 @@
 import { UPDATE_SETTINGS } from '../context/actions';
 import { useLibraryContext } from '../context/AppContext';
+import { themes } from '../theme/themes';
+import appIcon from '../../buildResources/icon.png';
 
-function Settings() {
+function Settings({ libraryApi }) {
   const { settings, appVersion, dispatch } = useLibraryContext();
 
   const updateSettings = (patch) => {
+    if (libraryApi?.updateSettings) {
+      libraryApi.updateSettings(patch);
+      return;
+    }
+
     dispatch({ type: UPDATE_SETTINGS, payload: patch });
   };
 
   return (
-    <div className="app-scroll h-screen overflow-y-auto px-10 py-10">
-      <div className="mx-auto max-w-4xl">
+    <div className="app-scroll h-full overflow-y-auto px-8 py-10">
+      <div className="mx-auto max-w-5xl">
         <p className="label-caps text-accent">Preferences</p>
-        <h2 className="mt-3 text-3xl font-bold text-primary">Reader settings</h2>
+        <h2 className="display-title mt-3 text-[44px] leading-none text-primary">Reader Settings</h2>
         <p className="mt-3 max-w-2xl text-sm leading-7 text-secondary">
-          Tune the default page fit and reading memory so the reader opens the way you prefer every time.
+          Tune how Onyx feels. Themes change the room around the books, while reader settings control how each issue opens.
         </p>
 
-        <div className="mt-10 space-y-5">
-          <section className="rounded-[20px] border border-white/5 bg-surface p-6">
-            <p className="label-caps text-muted">Default Fit Mode</p>
-            <select
-              value={settings.defaultFitMode}
-              onChange={(event) => updateSettings({ defaultFitMode: event.target.value })}
-              className="mt-4 w-full rounded-[14px] border border-white/5 bg-elevated px-4 py-3 text-sm text-primary outline-none"
-            >
-              <option value="fit-width">Fit Width</option>
-              <option value="fit-height">Fit Height</option>
-              <option value="original">Original</option>
-            </select>
-          </section>
-
-          <section className="rounded-[20px] border border-white/5 bg-surface p-6">
-            <div className="flex items-center justify-between">
+        <div className="mt-10 grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
+          <section className="border border-white/6 bg-surface p-6">
+            <div className="flex items-start justify-between gap-6">
               <div>
-                <p className="text-sm font-semibold text-primary">Remember reading position</p>
-                <p className="mt-1 text-sm text-secondary">Resume comics from the last saved page when reopening them.</p>
+                <p className="label-caps text-muted">Theme Vault</p>
+                <h3 className="display-title mt-3 text-[34px] leading-none text-primary">Pick A Mood</h3>
+                <p className="mt-3 max-w-2xl text-sm leading-7 text-secondary">
+                  Your icon sets the tone: glossy black, monochrome, deliberate. These themes push that mood into different collector personas.
+                </p>
               </div>
-              <button
-                type="button"
-                onClick={() => updateSettings({ rememberReadingPosition: !settings.rememberReadingPosition })}
-                className={`relative h-8 w-14 rounded-full transition-colors duration-150 ${settings.rememberReadingPosition ? 'bg-accent' : 'bg-overlay'}`}
-              >
-                <span className={`absolute top-1 h-6 w-6 rounded-full bg-white transition-[left] duration-150 ${settings.rememberReadingPosition ? 'left-7' : 'left-1'}`} />
-              </button>
+              <img
+                src={appIcon}
+                alt="Onyx icon"
+                className="h-16 w-16"
+              />
+            </div>
+
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
+              {themes.map((theme) => {
+                const selected = settings.theme === theme.id;
+                return (
+                  <button
+                    key={theme.id}
+                    type="button"
+                    onClick={() => updateSettings({ theme: theme.id })}
+                    className={`theme-card border p-4 text-left transition-colors duration-150 ${selected ? 'border-accent bg-accent/5' : 'border-white/6 bg-black/10 hover:border-white/12'}`}
+                    style={{
+                      '--theme-accent': theme.preview.accent.replace('#', '').match(/.{1,2}/g).map((value) => Number.parseInt(value, 16)).join(' '),
+                      '--theme-ambient': theme.preview.ambient.replace('#', '').match(/.{1,2}/g).map((value) => Number.parseInt(value, 16)).join(' '),
+                    }}
+                  >
+                    <div className="relative z-10">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="label-caps text-muted">Theme</p>
+                          <h4 className="display-title mt-3 text-[26px] leading-none text-primary">{theme.name}</h4>
+                        </div>
+                        <span
+                          className="h-7 w-7 border border-white/10"
+                          style={{ background: `linear-gradient(135deg, ${theme.preview.accent}, ${theme.preview.surface})` }}
+                        />
+                      </div>
+                      <p className="mt-4 text-sm leading-6 text-secondary">{theme.tagline}</p>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </section>
 
-          <section className="rounded-[20px] border border-white/5 bg-surface p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-semibold text-primary">Show progress bars</p>
-                <p className="mt-1 text-sm text-secondary">Display progress at the bottom of each cover in your library.</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => updateSettings({ showProgressBars: !settings.showProgressBars })}
-                className={`relative h-8 w-14 rounded-full transition-colors duration-150 ${settings.showProgressBars ? 'bg-accent' : 'bg-overlay'}`}
+          <div className="space-y-5">
+            <section className="border border-white/6 bg-surface p-6">
+              <p className="label-caps text-muted">Default Fit Mode</p>
+              <select
+                value={settings.defaultFitMode}
+                onChange={(event) => updateSettings({ defaultFitMode: event.target.value })}
+                className="mt-4 w-full border border-white/6 bg-elevated px-4 py-3 text-sm text-primary outline-none"
               >
-                <span className={`absolute top-1 h-6 w-6 rounded-full bg-white transition-[left] duration-150 ${settings.showProgressBars ? 'left-7' : 'left-1'}`} />
-              </button>
-            </div>
-          </section>
+                <option value="fit-width">Fit Width</option>
+                <option value="fit-height">Fit Height</option>
+                <option value="original">Original</option>
+              </select>
+            </section>
 
-          <section className="rounded-[20px] border border-white/5 bg-surface p-6">
-            <p className="label-caps text-muted">App Version</p>
-            <p className="mt-3 text-lg font-semibold text-primary">{appVersion}</p>
-          </section>
+            <section className="border border-white/6 bg-surface p-6">
+              <div className="flex items-center justify-between gap-5">
+                <div>
+                  <p className="text-sm font-semibold text-primary">Remember reading position</p>
+                  <p className="mt-1 text-sm text-secondary">Resume comics from the last saved page when reopening them.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => updateSettings({ rememberReadingPosition: !settings.rememberReadingPosition })}
+                  className={`relative h-8 w-14 transition-colors duration-150 ${settings.rememberReadingPosition ? 'bg-accent' : 'bg-overlay'}`}
+                >
+                  <span className={`absolute top-1 h-6 w-6 bg-white transition-[left] duration-150 ${settings.rememberReadingPosition ? 'left-7' : 'left-1'}`} />
+                </button>
+              </div>
+            </section>
+
+            <section className="border border-white/6 bg-surface p-6">
+              <div className="flex items-center justify-between gap-5">
+                <div>
+                  <p className="text-sm font-semibold text-primary">Show progress underlines</p>
+                  <p className="mt-1 text-sm text-secondary">Keep the thin shelf markers visible in the library.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => updateSettings({ showProgressBars: !settings.showProgressBars })}
+                  className={`relative h-8 w-14 transition-colors duration-150 ${settings.showProgressBars ? 'bg-accent' : 'bg-overlay'}`}
+                >
+                  <span className={`absolute top-1 h-6 w-6 bg-white transition-[left] duration-150 ${settings.showProgressBars ? 'left-7' : 'left-1'}`} />
+                </button>
+              </div>
+            </section>
+
+            <section className="border border-white/6 bg-surface p-6">
+              <p className="label-caps text-muted">App Version</p>
+              <p className="mt-3 font-['JetBrains_Mono'] text-[12px] uppercase tracking-[0.2em] text-primary">{appVersion}</p>
+            </section>
+          </div>
         </div>
       </div>
     </div>

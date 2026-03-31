@@ -1,21 +1,72 @@
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --bg-base: #0d0d0f;
-  --bg-surface: #161618;
-  --bg-elevated: #1e1e22;
-  --bg-overlay: #252529;
-  --border: rgba(255, 255, 255, 0.06);
+  --bg-base-rgb: 10 10 11;
+  --bg-surface-rgb: 20 20 22;
+  --bg-elevated-rgb: 30 30 34;
+  --bg-overlay-rgb: 38 38 43;
+  --border: rgba(255, 255, 255, 0.05);
   --border-strong: rgba(255, 255, 255, 0.12);
-  --text-primary: #f0f0f2;
-  --text-secondary: #9898a0;
-  --text-muted: #55555e;
-  --accent: #4f8ef7;
-  --accent-warm: #f0622a;
+  --text-primary-rgb: 244 241 235;
+  --text-secondary-rgb: 240 237 230;
+  --text-muted-rgb: 240 237 230;
+  --accent-rgb: 216 219 228;
+  --accent-warm-rgb: 96 101 114;
   --red: #ff453a;
   --green: #32d74b;
+  --paper: #f0ede6;
+  --ambient-rgb: 115, 119, 132;
+  --grain-opacity: 0.04;
+  --theme-name: 'Onyx Mono';
+}
+
+:root[data-theme='ember'] {
+  --bg-base-rgb: 12 8 8;
+  --bg-surface-rgb: 27 19 19;
+  --bg-elevated-rgb: 37 24 24;
+  --bg-overlay-rgb: 54 31 28;
+  --text-primary-rgb: 248 237 229;
+  --text-secondary-rgb: 232 211 197;
+  --text-muted-rgb: 194 160 138;
+  --accent-rgb: 255 78 59;
+  --accent-warm-rgb: 130 24 16;
+  --ambient-rgb: 143, 38, 25;
+  --paper: #f8ede5;
+  --theme-name: 'Ember Vault';
+}
+
+:root[data-theme='bone'] {
+  --bg-base-rgb: 13 11 10;
+  --bg-surface-rgb: 23 20 17;
+  --bg-elevated-rgb: 36 31 27;
+  --bg-overlay-rgb: 50 42 37;
+  --text-primary-rgb: 243 234 218;
+  --text-secondary-rgb: 218 201 182;
+  --text-muted-rgb: 181 157 134;
+  --accent-rgb: 200 135 61;
+  --accent-warm-rgb: 122 79 36;
+  --ambient-rgb: 120, 97, 75;
+  --paper: #f3ead8;
+  --theme-name: 'Bone Dust';
+}
+
+:root[data-theme='phosphor'] {
+  --bg-base-rgb: 7 10 8;
+  --bg-surface-rgb: 16 21 15;
+  --bg-elevated-rgb: 23 31 22;
+  --bg-overlay-rgb: 35 46 32;
+  --text-primary-rgb: 232 243 221;
+  --text-secondary-rgb: 193 216 181;
+  --text-muted-rgb: 132 160 120;
+  --accent-rgb: 143 240 91;
+  --accent-warm-rgb: 61 120 39;
+  --ambient-rgb: 63, 106, 45;
+  --paper: #e8f3dd;
+  --theme-name: 'Phosphor';
 }
 
 @layer base {
@@ -28,7 +79,9 @@
   }
 
   body {
-    @apply m-0 min-h-full overflow-hidden bg-base font-sans text-primary;
+    @apply m-0 min-h-full overflow-hidden bg-base text-primary;
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 300;
     letter-spacing: -0.01em;
   }
 
@@ -49,16 +102,33 @@
 
 body {
   background:
-    radial-gradient(circle at top, rgba(79, 142, 247, 0.08), transparent 34%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent 30%),
-    var(--bg-base);
+    radial-gradient(circle at top, rgba(var(--ambient-rgb), 0.08), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 30%),
+    rgb(var(--bg-base-rgb));
+  color: var(--paper);
+  font-family: 'DM Sans', sans-serif;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: var(--grain-opacity);
+  background-image:
+    radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.9) 0.5px, transparent 0.75px),
+    radial-gradient(circle at 80% 40%, rgba(255, 255, 255, 0.7) 0.5px, transparent 0.75px),
+    radial-gradient(circle at 45% 75%, rgba(255, 255, 255, 0.8) 0.5px, transparent 0.75px);
+  background-size: 12px 12px, 15px 15px, 18px 18px;
+  mix-blend-mode: soft-light;
+  z-index: 9999;
 }
 
 h1,
 h2,
 h3,
 h4 {
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 
 img {
@@ -67,10 +137,25 @@ img {
 }
 
 .label-caps {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
+}
+
+.display-title {
+  font-family: 'Bebas Neue', sans-serif;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.titlebar-drag {
+  -webkit-app-region: drag;
+}
+
+.titlebar-no-drag {
+  -webkit-app-region: no-drag;
 }
 
 .app-scroll {
@@ -79,7 +164,7 @@ img {
 }
 
 .app-scroll:hover {
-  scrollbar-color: var(--bg-overlay) transparent;
+  scrollbar-color: rgb(var(--bg-overlay-rgb)) transparent;
 }
 
 .app-scroll::-webkit-scrollbar {
@@ -97,7 +182,7 @@ img {
 }
 
 .app-scroll:hover::-webkit-scrollbar-thumb {
-  background: var(--bg-overlay);
+  background: rgba(240, 237, 230, 0.18);
 }
 
 .reader-image-enter {
@@ -108,15 +193,53 @@ img {
   opacity: 1;
 }
 
-.glass-toolbar {
-  background: rgba(13, 13, 15, 0.85);
-  backdrop-filter: blur(20px);
+.theme-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.theme-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(135deg, rgba(var(--theme-accent), 0.25), transparent 42%),
+    radial-gradient(circle at top right, rgba(var(--theme-ambient), 0.22), transparent 45%);
+  pointer-events: none;
 }
 
 .cover-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+@media (min-width: 900px) {
+  .cover-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.shelf-card {
+  animation: shelf-drop 440ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  transform-origin: center top;
+}
+
+.reader-chrome {
+  transition:
+    opacity 160ms linear,
+    transform 160ms linear;
+}
+
+.reader-flash {
+  animation: flash-frame 34ms linear forwards;
+}
+
+.ambient-wash {
+  transition:
+    background 600ms ease-out,
+    opacity 600ms ease-out,
+    filter 600ms ease-out;
 }
 
 .reader-click-zone {
@@ -138,4 +261,26 @@ img {
 .reader-click-zone-right {
   right: 0;
   width: 40%;
+}
+
+@keyframes shelf-drop {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes flash-frame {
+  from {
+    opacity: 0.28;
+  }
+
+  to {
+    opacity: 0;
+  }
 }

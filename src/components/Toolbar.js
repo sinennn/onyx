@@ -16,53 +16,54 @@ function Toolbar({
   currentPage,
   pageCount,
   fitMode,
+  visible,
   onBack,
   onToggleFit,
   onToggleFullscreen,
   onToggleThumbnails,
 }) {
   const FitIcon = fitIcons[fitMode] || FitWidthIcon;
+  const fitLabel = fitMode === 'fit-width' ? 'Fit Width' : fitMode === 'fit-height' ? 'Fit Height' : 'Original';
 
   return (
-    <header className="glass-toolbar sticky top-0 z-30 flex h-12 items-center justify-between border-b border-white/5 px-4">
-      <div className="flex items-center gap-2">
+    <header className={`reader-chrome pointer-events-none absolute inset-x-0 top-0 z-30 flex items-start justify-between px-6 pt-5 ${visible ? 'translate-y-0 opacity-100' : '-translate-y-3 opacity-0'}`}>
+      <div className="pointer-events-auto flex items-center gap-2">
         <button
           type="button"
           onClick={onBack}
-          className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-white/5 text-secondary transition-colors duration-150 hover:bg-white/10 hover:text-primary"
+          className="flex h-10 w-10 items-center justify-center border border-white/8 bg-black/55 text-secondary backdrop-blur-xl transition-colors duration-150 hover:border-white/16 hover:text-primary"
         >
           <ChevronLeftIcon className="h-4 w-4" />
         </button>
         <button
           type="button"
           onClick={onToggleThumbnails}
-          className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-white/5 text-secondary transition-colors duration-150 hover:bg-white/10 hover:text-primary"
+          className="flex h-10 w-10 items-center justify-center border border-white/8 bg-black/55 text-secondary backdrop-blur-xl transition-colors duration-150 hover:border-white/16 hover:text-primary"
         >
           <SidebarIcon className="h-4 w-4" />
         </button>
-        <div className="ml-2">
+        <div className="ml-3 border-l border-white/8 pl-4">
           <p className="label-caps text-muted">Now Reading</p>
-          <p className="max-w-[300px] truncate text-sm font-semibold text-primary">{title}</p>
+          <p className="display-title mt-1 max-w-[420px] truncate text-[28px] leading-none text-primary">{title}</p>
         </div>
       </div>
 
-      <div className="rounded-full border border-white/5 bg-white/5 px-3 py-1 text-xs font-medium text-secondary">
-        {currentPage + 1} / {pageCount}
-      </div>
-
-      <div className="flex items-center gap-2">
+      <div className="pointer-events-auto flex items-center gap-2">
+        <div className="border border-white/8 bg-black/55 px-3 py-2 font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.18em] text-secondary backdrop-blur-xl">
+          {currentPage + 1} / {pageCount}
+        </div>
         <button
           type="button"
           onClick={onToggleFit}
-          className="flex h-9 items-center gap-2 rounded-[10px] bg-white/5 px-3 text-sm text-secondary transition-colors duration-150 hover:bg-white/10 hover:text-primary"
+          className="flex h-10 items-center gap-2 border border-white/8 bg-black/55 px-3 text-sm text-secondary backdrop-blur-xl transition-colors duration-150 hover:border-white/16 hover:text-primary"
         >
           <FitIcon className="h-4 w-4" />
-          <span>{fitMode === 'fit-width' ? 'Fit Width' : fitMode === 'fit-height' ? 'Fit Height' : 'Original'}</span>
+          <span className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.18em]">{fitLabel}</span>
         </button>
         <button
           type="button"
           onClick={onToggleFullscreen}
-          className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-white/5 text-secondary transition-colors duration-150 hover:bg-white/10 hover:text-primary"
+          className="flex h-10 w-10 items-center justify-center border border-white/8 bg-black/55 text-secondary backdrop-blur-xl transition-colors duration-150 hover:border-white/16 hover:text-primary"
         >
           <FullscreenIcon className="h-4 w-4" />
         </button>

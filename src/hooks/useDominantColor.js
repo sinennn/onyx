@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 
 export function useDominantColor(imageURL) {
   const cacheRef = useRef(new Map());
-  const [glowColor, setGlowColor] = useState('rgba(79, 142, 247, 0.18)');
+  const [glowColor, setGlowColor] = useState('rgba(255, 60, 47, 0.22)');
 
   const primeColor = useCallback(async () => {
     if (!imageURL) {
@@ -46,7 +46,7 @@ export function useDominantColor(imageURL) {
       };
       image.onerror = reject;
       image.src = imageURL;
-    }).catch(() => 'rgba(79, 142, 247, 0.18)');
+    }).catch(() => 'rgba(255, 60, 47, 0.22)');
 
     cacheRef.current.set(imageURL, color);
     setGlowColor(color);

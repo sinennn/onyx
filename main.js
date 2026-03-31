@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, net, protocol } = require('electron');
 const fs = require('fs');
 const fsPromises = require('fs/promises');
 const crypto = require('crypto');
@@ -9,11 +9,33 @@ const Store = require('electron-store');
 const unrar = require('node-unrar-js');
 
 const { createExtractorFromFile } = unrar;
+const isDev = !app.isPackaged || process.env.DEV === 'true';
+const devServerURL = process.env.ONYX_DEV_SERVER_URL || 'http://127.0.0.1:5173';
+const MEDIA_SCHEME = 'onyx-media';
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: MEDIA_SCHEME,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+    },
+  },
+]);
 
 const libraryStore = new Store({
   name: 'panel-library',
   defaults: {
     library: [],
+    settings: {
+      defaultFitMode: 'fit-width',
+      rememberReadingPosition: true,
+      showProgressBars: true,
+      theme: 'onyx',
+    },
   },
 });
 
@@ -39,6 +61,30 @@ if (!gotLock) {
   app.quit();
 }
 
+function formatError(error) {
+  if (!error) {
+    return 'Unknown error';
+  }
+
+  if (error instanceof Error) {
+    return error.stack || error.message;
+  }
+
+  return typeof error === 'string' ? error : JSON.stringify(error);
+}
+
+function logDevError(scope, error) {
+  console.error(`[${scope}] ${formatError(error)}`);
+}
+
+process.on('uncaughtException', (error) => {
+  logDevError('main:uncaughtException', error);
+});
+
+process.on('unhandledRejection', (reason) => {
+  logDevError('main:unhandledRejection', reason);
+});
+
 function sanitizeLibrary(entries) {
   if (!Array.isArray(entries)) {
     return [];
@@ -56,11 +102,31 @@ function sanitizeLibrary(entries) {
     }));
 }
 
+function sanitizeSettings(settings) {
+  return {
+    defaultFitMode: ['fit-width', 'fit-height', 'original'].includes(settings?.defaultFitMode)
+      ? settings.defaultFitMode
+      : 'fit-width',
+    rememberReadingPosition: settings?.rememberReadingPosition !== false,
+    showProgressBars: settings?.showProgressBars !== false,
+    theme: typeof settings?.theme === 'string' ? settings.theme : 'onyx',
+  };
+}
+
 function persistLibrary() {
   libraryStore.set('library', libraryCache);
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('library:changed', libraryCache);
   }
+}
+
+function persistSettings(nextSettings) {
+  const clean = sanitizeSettings(nextSettings);
+  libraryStore.set('settings', clean);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('settings:changed', clean);
+  }
+  return clean;
 }
 
 function getTitleFromPath(filePath) {
@@ -98,8 +164,34 @@ function stableTempDir(filePath) {
   return path.join(getTempRoot(), `${fileStem}-${hash}`);
 }
 
-function toFileUrl(targetPath) {
-  return pathToFileURL(targetPath).href;
+function toMediaUrl(targetPath) {
+  return `${MEDIA_SCHEME}://local/?path=${encodeURIComponent(targetPath)}`;
+}
+
+function fromMediaUrl(targetUrl) {
+  const parsedUrl = new URL(targetUrl);
+  if (parsedUrl.protocol !== `${MEDIA_SCHEME}:`) {
+    return fileURLToPath(targetUrl);
+  }
+
+  const filePath = parsedUrl.searchParams.get('path');
+  if (!filePath) {
+    throw new Error('Invalid media path.');
+  }
+
+  return filePath;
+}
+
+function registerMediaProtocol() {
+  protocol.handle(MEDIA_SCHEME, async (request) => {
+    try {
+      const filePath = fromMediaUrl(request.url);
+      return net.fetch(pathToFileURL(filePath).href);
+    } catch (error) {
+      logDevError('media:serve', error);
+      return new Response('Not found', { status: 404 });
+    }
+  });
 }
 
 function throwIfAborted(signal) {
@@ -170,7 +262,7 @@ async function extractCbz(filePath, targetDir, signal) {
     const outputName = `${String(index + 1).padStart(4, '0')}-${path.basename(entry.name).replace(/[^\w.-]+/g, '_')}`;
     const outputPath = path.join(targetDir, outputName);
     await fsPromises.writeFile(outputPath, rawBuffer);
-    pages.push(toFileUrl(outputPath));
+    pages.push(toMediaUrl(outputPath));
   }
 
   return pages;
@@ -230,7 +322,7 @@ async function extractCbr(filePath, targetDir, signal) {
     .filter((entry) => isImageEntry(entry))
     .sort((left, right) => collator.compare(path.basename(left), path.basename(right)));
 
-  return files.map((entry) => toFileUrl(entry));
+  return files.map((entry) => toMediaUrl(entry));
 }
 
 async function extractArchive(filePath, signal) {
@@ -287,7 +379,7 @@ async function handleComicExtraction(filePath) {
   }
 
   const cached = extractionCache.get(filePath);
-  if (cached && cached.pages.every((page) => fs.existsSync(fileURLToPath(page)))) {
+  if (cached && cached.pages.every((page) => fs.existsSync(fromMediaUrl(page)))) {
     return {
       pages: cached.pages,
       title: cached.title,
@@ -381,9 +473,33 @@ function createMainWindow() {
     mainWindow = null;
   });
 
+  mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    const channels = {
+      0: console.log,
+      1: console.warn,
+      2: console.error,
+      3: console.info,
+    };
+    const log = channels[level] || console.log;
+    log(`[renderer:${level}] ${sourceId || 'unknown'}:${line || 0} ${message}`);
+  });
+
+  mainWindow.webContents.on('preload-error', (_event, preloadPath, error) => {
+    logDevError(`preload:${preloadPath}`, error);
+  });
+
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error(`[renderer:gone] ${details.reason} (exitCode=${details.exitCode})`);
+  });
+
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    console.error(`[window:load-failed] code=${errorCode} mainFrame=${isMainFrame} url=${validatedURL} ${errorDescription}`);
+  });
+
   mainWindow.webContents.on('did-finish-load', () => {
     mainWindow.webContents.send('library:boot', {
       library: libraryCache,
+      settings: sanitizeSettings(libraryStore.get('settings')),
       version: app.getVersion(),
     });
     mainWindow.webContents.send('app:focus-change', isWindowFocused);
@@ -393,9 +509,8 @@ function createMainWindow() {
     }
   });
 
-  const isDev = !app.isPackaged || process.env.DEV === 'true';
   if (isDev) {
-    mainWindow.loadURL('http://127.0.0.1:5173');
+    mainWindow.loadURL(devServerURL);
   } else {
     mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html'));
   }
@@ -409,9 +524,11 @@ ipcMain.handle('comic:open-file-picker', async () => {
     ],
   });
 
-  if (!result.canceled && result.filePaths.length) {
-    flushOpenFiles(result.filePaths);
+  if (result.canceled || !result.filePaths.length) {
+    return [];
   }
+
+  return result.filePaths.filter((filePath) => isComicArchive(filePath));
 });
 
 ipcMain.handle('comic:extract', async (_event, filePath) => {
@@ -420,11 +537,17 @@ ipcMain.handle('comic:extract', async (_event, filePath) => {
 
 ipcMain.handle('comic:get-library', async () => libraryCache);
 
+ipcMain.handle('comic:get-settings', async () => sanitizeSettings(libraryStore.get('settings')));
+
 ipcMain.handle('comic:sync-library', async (_event, nextLibrary) => {
   const clean = sanitizeLibrary(nextLibrary);
   libraryCache.splice(0, libraryCache.length, ...clean);
   persistLibrary();
   return libraryCache;
+});
+
+ipcMain.handle('comic:save-settings', async (_event, nextSettings) => {
+  return persistSettings(nextSettings);
 });
 
 ipcMain.handle('comic:save-progress', async (_event, filePath, page) => {
@@ -473,8 +596,22 @@ ipcMain.on('comic:renderer-ready', () => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('library:boot', {
       library: libraryCache,
+      settings: sanitizeSettings(libraryStore.get('settings')),
       version: app.getVersion(),
     });
+  }
+});
+
+ipcMain.on('dev:renderer-error', (_event, payload) => {
+  const location = payload?.source
+    ? `${payload.source}:${payload.line || 0}:${payload.column || 0}`
+    : 'unknown';
+  const header = payload?.kind === 'unhandledrejection'
+    ? '[renderer:unhandledrejection]'
+    : '[renderer:error]';
+  console.error(`${header} ${location} ${payload?.message || 'Unknown renderer error'}`);
+  if (payload?.stack) {
+    console.error(payload.stack);
   }
 });
 
@@ -530,6 +667,7 @@ app.on('activate', () => {
 
 app.whenReady().then(async () => {
   await ensureTempRoot();
+  registerMediaProtocol();
   createMainWindow();
 });
 

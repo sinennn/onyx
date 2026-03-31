@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { useIntersection } from '../hooks/useIntersection';
 import { useDominantColor } from '../hooks/useDominantColor';
 
-function CoverCard({ comic, onOpen, onContextMenu, showProgress }) {
+function CoverCard({ comic, onOpen, onContextMenu, showProgress, index = 0 }) {
   const cardRef = useRef(null);
   const isVisible = useIntersection(cardRef);
   const [isHovering, setIsHovering] = useState(false);
@@ -17,42 +17,48 @@ function CoverCard({ comic, onOpen, onContextMenu, showProgress }) {
       ref={cardRef}
       type="button"
       onClick={() => onOpen(comic)}
-      onContextMenu={(event) => onContextMenu(event, comic)}
+      onContextMenu={(event) => onContextMenu?.(event, comic)}
       onMouseEnter={() => {
         setIsHovering(true);
         primeColor();
       }}
       onMouseLeave={() => setIsHovering(false)}
-      className="group relative text-left"
+      className="group shelf-card relative text-left"
       style={{
-        boxShadow: isHovering && comic.coverURL ? `0 18px 40px -20px ${glowColor}` : 'none',
+        animationDelay: `${index * 30}ms`,
+        boxShadow: isHovering && comic.coverURL ? `0 32px 60px -28px ${glowColor}` : 'none',
       }}
     >
-      <div className="relative overflow-hidden rounded-[14px] bg-elevated">
-        <div className="aspect-[0.72] overflow-hidden rounded-[14px] border border-white/5 bg-gradient-to-br from-elevated to-overlay">
+      <div
+        className="relative overflow-hidden border border-white/6 bg-elevated transition-transform duration-200"
+        style={{
+          transform: isHovering ? 'perspective(1000px) rotateX(5deg) rotateY(-4deg) translateY(-6px)' : 'perspective(1000px) rotateX(0deg) rotateY(0deg) translateY(0px)',
+        }}
+      >
+        <div className="aspect-[0.72] overflow-hidden bg-gradient-to-br from-elevated to-overlay">
           {isVisible && comic.coverURL ? (
             <img
               src={comic.coverURL}
               alt={comic.title}
               loading="lazy"
               decoding="async"
-              className="h-full w-full rounded-[4px] object-cover transition-transform duration-150 group-hover:scale-[1.02]"
+              className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.04]"
             />
           ) : (
-            <div className="flex h-full items-center justify-center bg-gradient-to-br from-elevated to-overlay text-xs uppercase tracking-[0.2em] text-muted">
-              Panel
+            <div className="flex h-full items-center justify-center bg-gradient-to-br from-elevated to-overlay text-xs uppercase tracking-[0.24em] text-muted">
+              Onyx
             </div>
           )}
         </div>
         {showProgress && comic.progress > 0 ? (
-          <div className="absolute inset-x-0 bottom-0 h-[2px] bg-white/5">
+          <div className="absolute inset-x-0 bottom-0 h-px bg-white/8">
             <div className="h-full bg-accent" style={{ width: progressWidth }} />
           </div>
         ) : null}
       </div>
       <div className="mt-3">
-        <p className="truncate text-sm font-semibold text-primary">{comic.title}</p>
-        <p className="truncate text-xs text-secondary">
+        <p className="truncate text-[13px] font-medium uppercase tracking-[0.04em] text-primary">{comic.title}</p>
+        <p className="mt-1 truncate font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.18em] text-secondary">
           {comic.pageCount ? `${comic.pageCount} pages` : 'Ready to import'}
         </p>
       </div>

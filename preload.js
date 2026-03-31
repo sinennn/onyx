@@ -3,6 +3,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 const fileDropSubscribers = new Set();
 const bootSubscribers = new Set();
 const focusSubscribers = new Set();
+const librarySubscribers = new Set();
+const settingsSubscribers = new Set();
 
 let dropListenersBound = false;
 
@@ -35,8 +37,50 @@ function bindFileDropListeners() {
   });
 }
 
+function serializeError(error) {
+  if (!error) {
+    return {
+      message: 'Unknown error',
+      stack: '',
+    };
+  }
+
+  if (error instanceof Error) {
+    return {
+      message: error.message,
+      stack: error.stack || '',
+    };
+  }
+
+  return {
+    message: typeof error === 'string' ? error : JSON.stringify(error),
+    stack: '',
+  };
+}
+
 window.addEventListener('DOMContentLoaded', () => {
   bindFileDropListeners();
+});
+
+window.addEventListener('error', (event) => {
+  const details = serializeError(event.error || event.message);
+  ipcRenderer.send('dev:renderer-error', {
+    kind: 'error',
+    message: details.message,
+    stack: details.stack,
+    source: event.filename,
+    line: event.lineno,
+    column: event.colno,
+  });
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  const details = serializeError(event.reason);
+  ipcRenderer.send('dev:renderer-error', {
+    kind: 'unhandledrejection',
+    message: details.message,
+    stack: details.stack,
+  });
 });
 
 ipcRenderer.on('files:dropped', (_event, filePaths) => {
@@ -51,12 +95,22 @@ ipcRenderer.on('app:focus-change', (_event, isFocused) => {
   notify(focusSubscribers, isFocused);
 });
 
+ipcRenderer.on('library:changed', (_event, library) => {
+  notify(librarySubscribers, library);
+});
+
+ipcRenderer.on('settings:changed', (_event, settings) => {
+  notify(settingsSubscribers, settings);
+});
+
 contextBridge.exposeInMainWorld('comicAPI', {
   openFilePicker: () => ipcRenderer.invoke('comic:open-file-picker'),
   extractComic: (filePath) => ipcRenderer.invoke('comic:extract', filePath),
   cancelExtraction: (filePath) => ipcRenderer.send('comic:cancel-extraction', filePath),
   getLibrary: () => ipcRenderer.invoke('comic:get-library'),
+  getSettings: () => ipcRenderer.invoke('comic:get-settings'),
   syncLibrary: (library) => ipcRenderer.invoke('comic:sync-library', library),
+  saveSettings: (settings) => ipcRenderer.invoke('comic:save-settings', settings),
   saveProgress: (filePath, page) => ipcRenderer.invoke('comic:save-progress', filePath, page),
   removeFromLibrary: (filePath) => ipcRenderer.invoke('comic:remove-from-library', filePath),
   toggleFullscreen: () => ipcRenderer.invoke('comic:toggle-fullscreen'),
@@ -78,6 +132,18 @@ contextBridge.exposeInMainWorld('comicAPI', {
     focusSubscribers.add(callback);
     return () => {
       focusSubscribers.delete(callback);
+    };
+  },
+  onLibraryChanged: (callback) => {
+    librarySubscribers.add(callback);
+    return () => {
+      librarySubscribers.delete(callback);
+    };
+  },
+  onSettingsChanged: (callback) => {
+    settingsSubscribers.add(callback);
+    return () => {
+      settingsSubscribers.delete(callback);
     };
   },
 });

@@ -26,6 +26,7 @@ const initialLibraryState = {
     defaultFitMode: 'fit-width',
     rememberReadingPosition: true,
     showProgressBars: true,
+    theme: 'onyx',
   },
   toasts: [],
   appVersion: '1.0.0',

@@ -3,18 +3,18 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        base: '#0d0d0f',
-        surface: '#161618',
-        elevated: '#1e1e22',
-        overlay: '#252529',
-        primary: '#f0f0f2',
-        secondary: '#9898a0',
-        muted: '#55555e',
-        accent: '#4f8ef7',
-        warm: '#f0622a',
+        base: 'rgb(var(--bg-base-rgb) / <alpha-value>)',
+        surface: 'rgb(var(--bg-surface-rgb) / <alpha-value>)',
+        elevated: 'rgb(var(--bg-elevated-rgb) / <alpha-value>)',
+        overlay: 'rgb(var(--bg-overlay-rgb) / <alpha-value>)',
+        primary: 'rgb(var(--text-primary-rgb) / <alpha-value>)',
+        secondary: 'rgb(var(--text-secondary-rgb) / <alpha-value>)',
+        muted: 'rgb(var(--text-muted-rgb) / <alpha-value>)',
+        accent: 'rgb(var(--accent-rgb) / <alpha-value>)',
+        warm: 'rgb(var(--accent-warm-rgb) / <alpha-value>)',
       },
       fontFamily: {
-        sans: ['-apple-system', 'BlinkMacSystemFont', '"SF Pro Display"', 'system-ui', 'sans-serif'],
+        sans: ['"DM Sans"', '-apple-system', 'BlinkMacSystemFont', '"SF Pro Display"', 'system-ui', 'sans-serif'],
       },
       boxShadow: {
         insetSoft: 'inset 0 1px 0 rgba(255,255,255,0.03), inset -1px 0 0 rgba(255,255,255,0.02)',

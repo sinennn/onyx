@@ -1,8 +1,10 @@
+import { useEffect } from 'react';
 import Library from './views/Library';
 import Reader from './views/Reader';
 import Sidebar from './components/Sidebar';
 import Settings from './components/Settings';
 import Toast from './components/Toast';
+import WindowPane from './components/WindowPane';
 import { useLibraryContext, useReaderContext } from './context/AppContext';
 import { useLibrary } from './hooks/useLibrary';
 
@@ -10,28 +12,46 @@ function App() {
   const libraryState = useLibraryContext();
   const readerState = useReaderContext();
   const libraryApi = useLibrary();
+  const theme = libraryState.settings.theme || 'onyx';
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    return () => {
+      delete document.documentElement.dataset.theme;
+    };
+  }, [theme]);
 
   if (readerState.view === 'reader') {
     return (
       <>
-        <Reader libraryApi={libraryApi} />
+        <div className="flex h-screen flex-col bg-base text-primary">
+          <WindowPane />
+          <div className="min-h-0 flex-1">
+            <Reader libraryApi={libraryApi} />
+          </div>
+        </div>
         <Toast toasts={libraryState.toasts} />
       </>
     );
   }
 
   return (
-    <div className="flex min-h-screen bg-base text-primary">
-      <Sidebar />
-      <main className="min-w-0 flex-1 bg-[radial-gradient(circle_at_top,_rgba(79,142,247,0.1),_transparent_45%),linear-gradient(180deg,_rgba(255,255,255,0.02),_transparent_30%)]">
-        {readerState.view === 'settings' ? (
-          <Settings />
-        ) : (
-          <Library libraryApi={libraryApi} />
-        )}
-      </main>
+    <>
+      <div className="flex h-screen flex-col bg-base text-primary">
+        <WindowPane />
+        <div className="min-h-0 flex flex-1">
+          <Sidebar onImport={libraryApi.pickFiles} />
+          <main className="min-w-0 flex-1 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),transparent_28%)]">
+            {readerState.view === 'settings' ? (
+              <Settings libraryApi={libraryApi} />
+            ) : (
+              <Library libraryApi={libraryApi} />
+            )}
+          </main>
+        </div>
+      </div>
       <Toast toasts={libraryState.toasts} />
-    </div>
+    </>
   );
 }
 
