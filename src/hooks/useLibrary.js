@@ -56,6 +56,7 @@ export function useLibrary() {
   const readerState = useReaderContext();
 
   const libraryRef = useRef(libraryState.library);
+  const settingsRef = useRef(libraryState.settings);
   const progressRef = useRef({ timer: null, payload: null });
   const thumbnailWorkerRef = useRef(null);
   const thumbnailPromisesRef = useRef(new Map());
@@ -63,10 +64,16 @@ export function useLibrary() {
   const coverQueueRef = useRef(new Set());
   const bootedRef = useRef(false);
   const pendingExtractionRef = useRef('');
+  const enqueueToastRef = useRef(null);
+  const ingestFilesRef = useRef(null);
 
   useEffect(() => {
     libraryRef.current = libraryState.library;
   }, [libraryState.library]);
+
+  useEffect(() => {
+    settingsRef.current = libraryState.settings;
+  }, [libraryState.settings]);
 
   const enqueueToast = useCallback((message, tone = 'neutral') => {
     libraryState.dispatch({
@@ -77,7 +84,11 @@ export function useLibrary() {
         tone,
       },
     });
-  }, [libraryState]);
+  }, [libraryState.dispatch]);
+
+  useEffect(() => {
+    enqueueToastRef.current = enqueueToast;
+  }, [enqueueToast]);
 
   const syncLibrary = useCallback(async (nextLibrary) => {
     libraryRef.current = nextLibrary;
@@ -87,7 +98,7 @@ export function useLibrary() {
     } catch (error) {
       enqueueToast(error.message || 'Unable to save your library.', 'error');
     }
-  }, [enqueueToast, libraryState]);
+  }, [enqueueToast, libraryState.dispatch]);
 
   const patchComic = useCallback(async (entry) => {
     const nextLibrary = upsertEntry(libraryRef.current, entry);
@@ -98,7 +109,7 @@ export function useLibrary() {
     } catch (error) {
       enqueueToast(error.message || 'Unable to update this comic.', 'error');
     }
-  }, [enqueueToast, libraryState]);
+  }, [enqueueToast, libraryState.dispatch]);
 
   const ensureThumbnailWorker = useCallback(() => {
     if (thumbnailWorkerRef.current) {
@@ -125,15 +136,15 @@ export function useLibrary() {
     return worker;
   }, []);
 
-  const generateCoverThumbnail = useCallback(async (comic, pages) => {
-    if (!pages?.length || comic.coverURL || coverQueueRef.current.has(comic.filePath)) {
+  const generateCoverThumbnail = useCallback(async (comic, coverSource) => {
+    if (!coverSource || comic.coverURL || coverQueueRef.current.has(comic.filePath)) {
       return;
     }
 
     coverQueueRef.current.add(comic.filePath);
 
     try {
-      const response = await fetch(pages[0]);
+      const response = await fetch(coverSource);
       const blob = await response.blob();
       const worker = ensureThumbnailWorker();
       const buffer = await blob.arrayBuffer();
@@ -164,27 +175,46 @@ export function useLibrary() {
 
   const ingestFiles = useCallback(async (filePaths) => {
     const uniquePaths = [...new Set(filePaths)].filter(Boolean);
+    if (!uniquePaths.length) {
+      return;
+    }
+
+    let nextLibrary = libraryRef.current;
+    const coverJobs = [];
 
     for (const filePath of uniquePaths) {
       try {
-        const extracted = await getComicAPI().extractComic(filePath);
-        const current = libraryRef.current.find((entry) => entry.filePath === filePath);
+        const inspected = await getComicAPI().inspectComic(filePath);
+        const current = nextLibrary.find((entry) => entry.filePath === filePath);
         const comic = {
           filePath,
-          title: extracted.title,
-          pageCount: extracted.pageCount,
+          title: inspected.title,
+          pageCount: inspected.pageCount,
           progress: current?.progress || 0,
           lastOpened: current?.lastOpened || null,
           coverURL: current?.coverURL || '',
         };
 
-        await patchComic(comic);
-        await generateCoverThumbnail(comic, extracted.pages);
+        nextLibrary = upsertEntry(nextLibrary, comic);
+
+        if (!comic.coverURL && inspected.coverPage) {
+          coverJobs.push({ comic, coverSource: inspected.coverPage });
+        }
       } catch (error) {
         enqueueToast(error.message || 'Unable to import this comic archive.', 'error');
       }
     }
-  }, [enqueueToast, generateCoverThumbnail, patchComic]);
+
+    await syncLibrary(nextLibrary);
+
+    coverJobs.forEach(({ comic, coverSource }) => {
+      void generateCoverThumbnail(comic, coverSource);
+    });
+  }, [enqueueToast, generateCoverThumbnail, syncLibrary]);
+
+  useEffect(() => {
+    ingestFilesRef.current = ingestFiles;
+  }, [ingestFiles]);
 
   const openComic = useCallback(async (comic) => {
     if (pendingExtractionRef.current && pendingExtractionRef.current !== comic.filePath) {
@@ -196,7 +226,8 @@ export function useLibrary() {
 
     try {
       const extracted = await getComicAPI().extractComic(comic.filePath);
-      const startPage = libraryState.settings.rememberReadingPosition
+      const settings = settingsRef.current;
+      const startPage = settings.rememberReadingPosition
         ? Math.min(comic.progress || 0, Math.max(0, extracted.pageCount - 1))
         : 0;
 
@@ -212,7 +243,7 @@ export function useLibrary() {
         payload: {
           comic: hydratedComic,
           startPage,
-          fitMode: libraryState.settings.defaultFitMode,
+          fitMode: settings.defaultFitMode,
         },
       });
 
@@ -222,7 +253,7 @@ export function useLibrary() {
         pageCount: extracted.pageCount,
         lastOpened: new Date().toISOString(),
       });
-      generateCoverThumbnail(hydratedComic, extracted.pages);
+      generateCoverThumbnail(hydratedComic, extracted.pages[0]);
     } catch (error) {
       if (error.message !== 'Extraction cancelled') {
         enqueueToast(error.message || 'Unable to open this comic.', 'error');
@@ -233,7 +264,7 @@ export function useLibrary() {
       }
       readerState.dispatch({ type: SET_READER_LOADING, payload: false });
     }
-  }, [enqueueToast, generateCoverThumbnail, libraryState.settings, patchComic, readerState]);
+  }, [enqueueToast, generateCoverThumbnail, patchComic, readerState.dispatch]);
 
   const closeComic = useCallback(async () => {
     if (progressRef.current.payload) {
@@ -241,7 +272,7 @@ export function useLibrary() {
       await getComicAPI().saveProgress(filePath, page);
     }
     readerState.dispatch({ type: CLOSE_COMIC });
-  }, [readerState]);
+  }, [readerState.dispatch]);
 
   const queueProgressSave = useCallback((filePath, page, pageCount) => {
     if (!filePath) {
@@ -271,7 +302,7 @@ export function useLibrary() {
       await getComicAPI().saveProgress(filePath, page);
       progressRef.current.payload = null;
     }, 500);
-  }, [libraryState]);
+  }, [libraryState.dispatch]);
 
   const removeComic = useCallback(async (filePath) => {
     libraryState.dispatch({ type: REMOVE_COMIC, payload: filePath });
@@ -282,11 +313,11 @@ export function useLibrary() {
     } catch (error) {
       enqueueToast(error.message || 'Unable to remove this comic.', 'error');
     }
-  }, [enqueueToast, libraryState]);
+  }, [enqueueToast, libraryState.dispatch]);
 
   const setView = useCallback((view) => {
     readerState.dispatch({ type: SET_VIEW, payload: view });
-  }, [readerState]);
+  }, [readerState.dispatch]);
 
   const updateSettings = useCallback((patch) => {
     const nextSettings = {
@@ -299,19 +330,19 @@ export function useLibrary() {
     getComicAPI().saveSettings(nextSettings).catch((error) => {
       enqueueToast(error.message || 'Unable to save your settings.', 'error');
     });
-  }, [enqueueToast, libraryState]);
+  }, [enqueueToast, libraryState.dispatch, libraryState.settings]);
 
   useEffect(() => {
-    if (bootedRef.current) {
-      return undefined;
-    }
-
     let comicAPI;
 
     try {
       comicAPI = getComicAPI();
     } catch (error) {
-      enqueueToast(error.message, 'error');
+      enqueueToastRef.current?.(error.message, 'error');
+      return undefined;
+    }
+
+    if (bootedRef.current) {
       return undefined;
     }
 
@@ -334,7 +365,7 @@ export function useLibrary() {
     });
 
     const unsubscribeDrops = comicAPI.onFilesDropped((filePaths) => {
-      ingestFiles(filePaths);
+      ingestFilesRef.current?.(filePaths);
     });
 
     const unsubscribeFocus = comicAPI.onAppFocusChange((isFocused) => {
@@ -384,7 +415,7 @@ export function useLibrary() {
       thumbnailWorkerRef.current?.terminate();
       thumbnailWorkerRef.current = null;
     };
-  }, [enqueueToast, ingestFiles, libraryState]);
+  }, []);
 
   useEffect(() => {
     const missingCovers = libraryState.library.filter((comic) => !comic.coverURL);
@@ -401,8 +432,14 @@ export function useLibrary() {
         }
 
         try {
-          const extracted = await getComicAPI().extractComic(comic.filePath);
-          await generateCoverThumbnail(comic, extracted.pages);
+          const inspected = await getComicAPI().inspectComic(comic.filePath);
+          if (cancelled) {
+            return;
+          }
+          await generateCoverThumbnail(comic, inspected.coverPage);
+          await new Promise((resolve) => {
+            window.setTimeout(resolve, 0);
+          });
         } catch (error) {
           if (!cancelled) {
             enqueueToast(`Unable to refresh the cover for ${comic.title}.`, 'error');
@@ -411,31 +448,46 @@ export function useLibrary() {
       }
     };
 
-    hydrateMissingCovers();
+    const timer = window.setTimeout(() => {
+      hydrateMissingCovers();
+    }, 120);
+
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [enqueueToast, generateCoverThumbnail, libraryState.library]);
 
   const dismissToast = useCallback((toastId) => {
     libraryState.dispatch({ type: DISMISS_TOAST, payload: toastId });
-  }, [libraryState]);
+  }, [libraryState.dispatch]);
+
+  const pickFiles = useCallback(async () => {
+    try {
+      const filePaths = await getComicAPI().openFilePicker();
+      if (filePaths?.length) {
+        await ingestFiles(filePaths);
+      }
+    } catch (error) {
+      enqueueToast(error.message || 'Unable to open the file picker.', 'error');
+    }
+  }, [enqueueToast, ingestFiles]);
+
+  const toggleFullscreen = useCallback(async () => {
+    try {
+      return await getComicAPI().toggleFullscreen();
+    } catch (error) {
+      enqueueToast(error.message || 'Unable to toggle fullscreen.', 'error');
+      return false;
+    }
+  }, [enqueueToast]);
 
   return {
     library: libraryState.library,
     settings: libraryState.settings,
     currentComic: readerState.currentComic,
     currentPage: readerState.currentPage,
-    pickFiles: async () => {
-      try {
-        const filePaths = await getComicAPI().openFilePicker();
-        if (filePaths?.length) {
-          await ingestFiles(filePaths);
-        }
-      } catch (error) {
-        enqueueToast(error.message || 'Unable to open the file picker.', 'error');
-      }
-    },
+    pickFiles,
     openComic,
     closeComic,
     queueProgressSave,
@@ -444,13 +496,6 @@ export function useLibrary() {
     updateSettings,
     syncLibrary,
     dismissToast,
-    toggleFullscreen: async () => {
-      try {
-        return await getComicAPI().toggleFullscreen();
-      } catch (error) {
-        enqueueToast(error.message || 'Unable to toggle fullscreen.', 'error');
-        return false;
-      }
-    },
+    toggleFullscreen,
   };
 }

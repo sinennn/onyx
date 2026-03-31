@@ -48,6 +48,7 @@ let isWindowFocused = true;
 
 const libraryCache = sanitizeLibrary(libraryStore.get('library'));
 const extractionCache = new Map();
+const inspectionCache = new Map();
 const extractionControllers = new Map();
 const extractionJobs = new Map();
 const focusWaiters = new Set();
@@ -162,6 +163,10 @@ function stableTempDir(filePath) {
   const hash = crypto.createHash('md5').update(filePath).digest('hex').slice(0, 12);
   const fileStem = path.basename(filePath, path.extname(filePath)).replace(/[^\w.-]+/g, '-').slice(0, 48);
   return path.join(getTempRoot(), `${fileStem}-${hash}`);
+}
+
+function stablePreviewDir(filePath) {
+  return `${stableTempDir(filePath)}-preview`;
 }
 
 function toMediaUrl(targetPath) {
@@ -351,6 +356,131 @@ async function extractArchive(filePath, signal) {
   return payload;
 }
 
+async function writePreviewAsset(filePath, entryName, buffer) {
+  const previewDir = stablePreviewDir(filePath);
+  await removePath(previewDir);
+  await fsPromises.mkdir(previewDir, { recursive: true });
+
+  const outputName = path.basename(entryName).replace(/[^\w.-]+/g, '_') || 'cover';
+  const outputPath = path.join(previewDir, outputName);
+  await fsPromises.writeFile(outputPath, buffer);
+
+  return {
+    directory: previewDir,
+    coverPage: toMediaUrl(outputPath),
+  };
+}
+
+async function inspectCbz(filePath) {
+  const fileBuffer = await fsPromises.readFile(filePath);
+  const archive = await JSZip.loadAsync(fileBuffer);
+  const fileEntries = Object.values(archive.files)
+    .filter((entry) => !entry.dir && isImageEntry(entry.name))
+    .sort((left, right) => collator.compare(left.name, right.name));
+
+  if (!fileEntries.length) {
+    throw new Error('No readable pages were found in this archive.');
+  }
+
+  const firstEntry = fileEntries[0];
+  const previewBuffer = await firstEntry.async('nodebuffer');
+  const preview = await writePreviewAsset(filePath, firstEntry.name, previewBuffer);
+
+  return {
+    ...preview,
+    title: getTitleFromPath(filePath),
+    pageCount: fileEntries.length,
+  };
+}
+
+async function inspectCbr(filePath) {
+  const previewDir = stablePreviewDir(filePath);
+  await removePath(previewDir);
+  await fsPromises.mkdir(previewDir, { recursive: true });
+
+  let extractor;
+
+  try {
+    extractor = await createExtractorFromFile({
+      filepath: filePath,
+      targetPath: previewDir,
+    });
+  } catch (error) {
+    extractor = await createExtractorFromFile(filePath, previewDir);
+  }
+
+  const headers = unwrapFileHeaders(extractor.getFileList())
+    .filter((header) => header && !header.flags?.directory && !(header.name || '').endsWith('/') && isImageEntry(header.name || ''))
+    .sort((left, right) => collator.compare(left.name, right.name));
+
+  if (!headers.length) {
+    throw new Error('No readable pages were found in this archive.');
+  }
+
+  const firstHeader = headers[0];
+  const extracted = typeof extractor.extract === 'function'
+    ? extractor.extract({ files: [firstHeader.name] })
+    : extractor.extractFiles([firstHeader.name]);
+
+  if (extracted && extracted.files) {
+    Array.from(extracted.files);
+  } else if (Array.isArray(extracted) && extracted[1] && extracted[1].files) {
+    extracted[1].files.forEach(() => {});
+  }
+
+  const files = (await walkFiles(previewDir))
+    .filter((entry) => isImageEntry(entry))
+    .sort((left, right) => collator.compare(path.basename(left), path.basename(right)));
+
+  if (!files.length) {
+    throw new Error('No readable pages were found in this archive.');
+  }
+
+  return {
+    directory: previewDir,
+    coverPage: toMediaUrl(files[0]),
+    title: getTitleFromPath(filePath),
+    pageCount: headers.length,
+  };
+}
+
+async function inspectArchive(filePath) {
+  if (!isComicArchive(filePath)) {
+    throw new Error('Unsupported file type. Choose a CBZ or CBR archive.');
+  }
+
+  const extracted = extractionCache.get(filePath);
+  if (extracted && extracted.pages[0] && fs.existsSync(fromMediaUrl(extracted.pages[0]))) {
+    return {
+      title: extracted.title,
+      pageCount: extracted.pageCount,
+      coverPage: extracted.pages[0],
+    };
+  }
+
+  const cached = inspectionCache.get(filePath);
+  if (cached && cached.coverPage && fs.existsSync(fromMediaUrl(cached.coverPage))) {
+    return {
+      title: cached.title,
+      pageCount: cached.pageCount,
+      coverPage: cached.coverPage,
+    };
+  }
+
+  await ensureTempRoot();
+  const extension = path.extname(filePath).toLowerCase();
+  const inspection = extension === '.cbr' || extension === '.rar'
+    ? await inspectCbr(filePath)
+    : await inspectCbz(filePath);
+
+  inspectionCache.set(filePath, inspection);
+  return {
+    title: inspection.title,
+    pageCount: inspection.pageCount,
+    coverPage: inspection.coverPage,
+  };
+}
+
 function upsertLibraryEntry(filePath, payload) {
   const index = libraryCache.findIndex((entry) => entry.filePath === filePath);
   const current = index >= 0 ? libraryCache[index] : null;
@@ -535,6 +665,10 @@ ipcMain.handle('comic:extract', async (_event, filePath) => {
   return handleComicExtraction(filePath);
 });
 
+ipcMain.handle('comic:inspect', async (_event, filePath) => {
+  return inspectArchive(filePath);
+});
+
 ipcMain.handle('comic:get-library', async () => libraryCache);
 
 ipcMain.handle('comic:get-settings', async () => sanitizeSettings(libraryStore.get('settings')));
@@ -568,6 +702,12 @@ ipcMain.handle('comic:remove-from-library', async (_event, filePath) => {
   if (cached) {
     await removePath(cached.directory);
     extractionCache.delete(filePath);
+  }
+
+  const inspection = inspectionCache.get(filePath);
+  if (inspection) {
+    await removePath(inspection.directory);
+    inspectionCache.delete(filePath);
   }
 });
 
@@ -672,5 +812,8 @@ app.whenReady().then(async () => {
 });
 
 app.on('before-quit', async () => {
-  await Promise.all(Array.from(extractionCache.values()).map((entry) => removePath(entry.directory)));
+  await Promise.all([
+    ...Array.from(extractionCache.values()).map((entry) => removePath(entry.directory)),
+    ...Array.from(inspectionCache.values()).map((entry) => removePath(entry.directory)),
+  ]);
 });

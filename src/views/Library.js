@@ -94,8 +94,8 @@ function Library({ libraryApi }) {
         </div>
 
         <div className="relative mx-auto max-w-[1320px] px-6 py-6">
-          <header className="mb-4 flex items-center justify-between border-b border-white/6 pb-3">
-            <div>
+          <header className="mb-4 flex items-center justify-between border-b border-white/6 pb-6">
+            {/* <div>
               <p className="label-caps text-muted">Archive</p>
               <h2 className="display-title mt-2 text-[30px] leading-none text-primary">Onyx Library</h2>
             </div>
@@ -111,7 +111,7 @@ function Library({ libraryApi }) {
               >
                 Import
               </button>
-            </div>
+            </div> */}
           </header>
 
           <section className="relative border border-white/6 bg-[#0f0f11]">

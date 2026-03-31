@@ -61,6 +61,8 @@ function Reader({ libraryApi }) {
   const chromeTimerRef = useRef(null);
   const scrollContainerRef = useRef(null);
   const pageRefs = useRef([]);
+  const resumeScrollPendingRef = useRef(false);
+  const resumeTargetPageRef = useRef(0);
 
   const pageCount = currentComic?.pages?.length || currentComic?.pageCount || 0;
   const pages = currentComic?.pages || [];
@@ -101,11 +103,25 @@ function Reader({ libraryApi }) {
   }, [dispatch]);
 
   useEffect(() => {
+    if (!currentComic?.filePath) {
+      resumeScrollPendingRef.current = false;
+      resumeTargetPageRef.current = 0;
+      return;
+    }
+
+    resumeTargetPageRef.current = currentPage;
+    resumeScrollPendingRef.current = true;
+  }, [currentComic?.filePath]);
+
+  useEffect(() => {
     if (!currentComic) {
       return;
     }
 
     revealChrome();
+    if (resumeScrollPendingRef.current) {
+      return;
+    }
     libraryApi.queueProgressSave(currentComic.filePath, currentPage, pageCount);
   }, [currentComic, currentPage, libraryApi, pageCount, revealChrome]);
 
@@ -136,6 +152,10 @@ function Reader({ libraryApi }) {
         return;
       }
 
+      if (resumeScrollPendingRef.current) {
+        return;
+      }
+
       const nextPage = Number(bestEntry.target.getAttribute('data-page-index'));
       if (!Number.isNaN(nextPage) && nextPage !== currentPage) {
         dispatch({ type: SET_CURRENT_PAGE, payload: nextPage });
@@ -160,6 +180,35 @@ function Reader({ libraryApi }) {
   const registerPageRef = useCallback((index, node) => {
     pageRefs.current[index] = node;
   }, []);
+
+  useEffect(() => {
+    if (!currentComic?.filePath || !pages.length || !resumeScrollPendingRef.current) {
+      return undefined;
+    }
+
+    const targetPage = Math.max(0, Math.min(pages.length - 1, resumeTargetPageRef.current));
+    const targetNode = pageRefs.current[targetPage];
+    if (!targetNode) {
+      return undefined;
+    }
+
+    let releaseFrame = 0;
+    const scrollFrame = window.requestAnimationFrame(() => {
+      targetNode.scrollIntoView({
+        block: 'start',
+        behavior: 'auto',
+      });
+
+      releaseFrame = window.requestAnimationFrame(() => {
+        resumeScrollPendingRef.current = false;
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(scrollFrame);
+      window.cancelAnimationFrame(releaseFrame);
+    };
+  }, [currentComic?.filePath, pages.length]);
 
   useKeyNav({
     onPrevious: goPrevious,

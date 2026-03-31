@@ -105,6 +105,7 @@ ipcRenderer.on('settings:changed', (_event, settings) => {
 
 contextBridge.exposeInMainWorld('comicAPI', {
   openFilePicker: () => ipcRenderer.invoke('comic:open-file-picker'),
+  inspectComic: (filePath) => ipcRenderer.invoke('comic:inspect', filePath),
   extractComic: (filePath) => ipcRenderer.invoke('comic:extract', filePath),
   cancelExtraction: (filePath) => ipcRenderer.send('comic:cancel-extraction', filePath),
   getLibrary: () => ipcRenderer.invoke('comic:get-library'),
