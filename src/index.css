@@ -1,0 +1,141 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-base: #0d0d0f;
+  --bg-surface: #161618;
+  --bg-elevated: #1e1e22;
+  --bg-overlay: #252529;
+  --border: rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.12);
+  --text-primary: #f0f0f2;
+  --text-secondary: #9898a0;
+  --text-muted: #55555e;
+  --accent: #4f8ef7;
+  --accent-warm: #f0622a;
+  --red: #ff453a;
+  --green: #32d74b;
+}
+
+@layer base {
+  * {
+    @apply box-border;
+  }
+
+  html {
+    @apply h-full antialiased;
+  }
+
+  body {
+    @apply m-0 min-h-full overflow-hidden bg-base font-sans text-primary;
+    letter-spacing: -0.01em;
+  }
+
+  #root {
+    @apply min-h-screen;
+  }
+
+  button,
+  input,
+  select {
+    font: inherit;
+  }
+
+  button {
+    @apply border-0 bg-transparent p-0 text-inherit;
+  }
+}
+
+body {
+  background:
+    radial-gradient(circle at top, rgba(79, 142, 247, 0.08), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent 30%),
+    var(--bg-base);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  letter-spacing: -0.02em;
+}
+
+img {
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.label-caps {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.app-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.app-scroll:hover {
+  scrollbar-color: var(--bg-overlay) transparent;
+}
+
+.app-scroll::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.app-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-scroll::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background: transparent;
+}
+
+.app-scroll:hover::-webkit-scrollbar-thumb {
+  background: var(--bg-overlay);
+}
+
+.reader-image-enter {
+  opacity: 0;
+}
+
+.reader-image-ready {
+  opacity: 1;
+}
+
+.glass-toolbar {
+  background: rgba(13, 13, 15, 0.85);
+  backdrop-filter: blur(20px);
+}
+
+.cover-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 16px;
+}
+
+.reader-click-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.reader-click-zone-left {
+  left: 0;
+  width: 40%;
+}
+
+.reader-click-zone-center {
+  left: 40%;
+  width: 20%;
+}
+
+.reader-click-zone-right {
+  right: 0;
+  width: 40%;
+}

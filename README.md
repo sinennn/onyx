@@ -6,8 +6,6 @@ Electron + Vite + React + TailwindCSS Boilerplate
 
 ![Preview](https://raw.githubusercontent.com/sunny-dx/images/main/Screenshot%20from%202022-09-19%2016-14-13.png)
 
-<!-- fire emoji -->
-
 > Vite + Electron + React + TailwindCSS = 🚀
 
 ## Get started

@@ -1,23 +1,19 @@
-if (process.env.VITE_APP_VERSION === undefined) {
-  const now = new Date();
-  process.env.VITE_APP_VERSION = `${now.getUTCFullYear() - 2000}.${
-    now.getUTCMonth() + 1
-  }.${now.getUTCDate()}-${now.getUTCHours() * 60 + now.getUTCMinutes()}`;
-}
-
-/**
- * @type {import('electron-builder').Configuration}
- * @see https://www.electron.build/configuration/configuration
- */
-const config = {
+module.exports = {
+  appId: 'com.openai.comicreader',
+  productName: 'Panel',
   directories: {
-    output: 'dist',
+    output: 'release',
     buildResources: 'buildResources',
   },
-  files: ['packages/**/dist/**'],
-  extraMetadata: {
-    version: process.env.VITE_APP_VERSION,
+  files: [
+    'dist/**/*',
+    'main.js',
+    'preload.js',
+    'package.json',
+  ],
+  mac: {
+    category: 'public.app-category.entertainment',
+    icon: 'buildResources/icon.icns',
+    target: ['dmg', 'zip'],
   },
 };
-
-module.exports = config;
