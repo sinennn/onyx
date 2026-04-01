@@ -36,7 +36,7 @@ npm run build:mac:all
 ```
 
 
-(BTW, i haven't implemented this yet)
+(BTW, i haven't implemented this fully yet)
 ## OTA Releases
 
 Onyx is configured for non-App-Store updates through GitHub Releases using `electron-builder` and `electron-updater`.
