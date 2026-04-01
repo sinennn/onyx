@@ -1,19 +1,66 @@
-# Minimal Vite Electron React Boilerplate
+# Onyx
 
----
+Premium macOS comic reader built with Electron, React, and Tailwind.
 
-Electron + Vite + React + TailwindCSS Boilerplate
+## Development
 
-![Preview](https://raw.githubusercontent.com/sunny-dx/images/main/Screenshot%20from%202022-09-19%2016-14-13.png)
+```bash
+npm install
+npm run dev
+```
 
-> Vite + Electron + React + TailwindCSS = 🚀
+## Builds
 
-## Get started
+```bash
+npm run build
+```
 
-Follow these steps to get started with the template:
+This creates a local packaged build without publishing an update.
 
-1. Click the **[Use this template](https://github.com/sunny-dx/vite-electron-react-tailwind-boilerplate/generate)** button (you must be
-   logged in) or just clone this repo.
-2. Install all the dependencies using yarn or npm
+Intel-only DMG:
 
-That's all you need. 😉
+```bash
+npm run build:mac:intel
+```
+
+Apple Silicon-only DMG:
+
+```bash
+npm run build:mac:apple
+```
+
+Both macOS DMGs in one go:
+
+```bash
+npm run build:mac:all
+```
+
+
+(BTW, i haven't implemented this yet)
+## OTA Releases
+
+Onyx is configured for non-App-Store updates through GitHub Releases using `electron-builder` and `electron-updater`.
+
+Publish a release with:
+
+```bash
+npm run release
+```
+
+Required environment variables for publishing:
+
+```bash
+GH_TOKEN=your_github_token
+```
+
+Required environment variables for signed macOS builds:
+
+```bash
+CSC_LINK=base64_or_file_url_to_your_developer_id_certificate
+CSC_KEY_PASSWORD=your_certificate_password
+APPLE_ID=your_apple_id
+APPLE_APP_SPECIFIC_PASSWORD=your_app_specific_password
+APPLE_TEAM_ID=your_apple_team_id
+```
+
+Electron Builder handles the GitHub release metadata used by the in-app updater. The app checks for updates automatically in packaged builds, and you can also check manually from Settings.

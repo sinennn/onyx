@@ -1,6 +1,7 @@
 node_modules
 .DS_Store
 dist
+release
 *.local
 thumbs.db
 package-lock.json

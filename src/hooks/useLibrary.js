@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   CLOSE_COMIC,
   DISMISS_TOAST,
@@ -55,6 +55,14 @@ export function useLibrary() {
   const libraryState = useLibraryContext();
   const readerState = useReaderContext();
 
+  const [updateState, setUpdateState] = useState({
+    state: 'idle',
+    currentVersion: null,
+    availableVersion: null,
+    downloadedVersion: null,
+    progress: 0,
+    message: '',
+  });
   const libraryRef = useRef(libraryState.library);
   const settingsRef = useRef(libraryState.settings);
   const progressRef = useRef({ timer: null, payload: null });
@@ -387,6 +395,13 @@ export function useLibrary() {
       libraryState.dispatch({ type: UPDATE_SETTINGS, payload: nextSettings });
     });
 
+    const unsubscribeUpdateStatus = comicAPI.onUpdateStatus((nextUpdateState) => {
+      setUpdateState((current) => ({
+        ...current,
+        ...nextUpdateState,
+      }));
+    });
+
     comicAPI.getLibrary().then((library) => {
       libraryState.dispatch({ type: SET_LIBRARY, payload: library });
       libraryRef.current = library;
@@ -399,6 +414,10 @@ export function useLibrary() {
     comicAPI.getAppInfo().then((info) => {
       if (info?.version) {
         libraryState.dispatch({ type: SET_APP_VERSION, payload: info.version });
+        setUpdateState((current) => ({
+          ...current,
+          currentVersion: info.version,
+        }));
       }
     });
 
@@ -408,6 +427,7 @@ export function useLibrary() {
       unsubscribeFocus?.();
       unsubscribeLibraryChanges?.();
       unsubscribeSettingsChanges?.();
+      unsubscribeUpdateStatus?.();
       window.clearTimeout(progressRef.current.timer);
       if (pendingExtractionRef.current) {
         comicAPI.cancelExtraction(pendingExtractionRef.current);
@@ -482,9 +502,35 @@ export function useLibrary() {
     }
   }, [enqueueToast]);
 
+  const checkForUpdates = useCallback(async () => {
+    try {
+      const nextState = await getComicAPI().checkForUpdates();
+      if (nextState) {
+        setUpdateState((current) => ({
+          ...current,
+          ...nextState,
+        }));
+      }
+      return nextState;
+    } catch (error) {
+      enqueueToast(error.message || 'Unable to check for updates.', 'error');
+      return null;
+    }
+  }, [enqueueToast]);
+
+  const installUpdate = useCallback(async () => {
+    try {
+      return await getComicAPI().installUpdate();
+    } catch (error) {
+      enqueueToast(error.message || 'Unable to install the update.', 'error');
+      return false;
+    }
+  }, [enqueueToast]);
+
   return {
     library: libraryState.library,
     settings: libraryState.settings,
+    updateState,
     currentComic: readerState.currentComic,
     currentPage: readerState.currentPage,
     pickFiles,
@@ -497,5 +543,7 @@ export function useLibrary() {
     syncLibrary,
     dismissToast,
     toggleFullscreen,
+    checkForUpdates,
+    installUpdate,
   };
 }

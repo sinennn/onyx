@@ -5,6 +5,14 @@ import appIcon from '../../buildResources/icon.png';
 
 function Settings({ libraryApi }) {
   const { settings, appVersion, dispatch } = useLibraryContext();
+  const updateState = libraryApi?.updateState || {
+    state: 'idle',
+    currentVersion: appVersion,
+    availableVersion: null,
+    downloadedVersion: null,
+    progress: 0,
+    message: '',
+  };
 
   const updateSettings = (patch) => {
     if (libraryApi?.updateSettings) {
@@ -14,6 +22,22 @@ function Settings({ libraryApi }) {
 
     dispatch({ type: UPDATE_SETTINGS, payload: patch });
   };
+
+  const isCheckingUpdates = updateState.state === 'checking' || updateState.state === 'downloading';
+  const canInstallUpdate = updateState.state === 'downloaded';
+  const updateHeadline = canInstallUpdate
+    ? 'Update Ready'
+    : updateState.state === 'downloading'
+      ? 'Downloading Update'
+      : updateState.state === 'available'
+        ? 'Update Found'
+        : updateState.state === 'development'
+          ? 'Production Builds Only'
+          : updateState.state === 'error'
+            ? 'Update Error'
+            : 'Automatic Updates';
+  const updateMessage = updateState.message
+    || (updateState.currentVersion ? `Current version ${updateState.currentVersion}` : 'Keep Onyx current without reinstalling from scratch.');
 
   return (
     <div className="app-scroll h-full overflow-y-auto px-8 py-10">
@@ -117,6 +141,39 @@ function Settings({ libraryApi }) {
                 >
                   <span className={`absolute top-1 h-6 w-6 bg-white transition-[left] duration-150 ${settings.showProgressBars ? 'left-7' : 'left-1'}`} />
                 </button>
+              </div>
+            </section>
+
+            <section className="border border-white/6 bg-surface p-6">
+              <p className="label-caps text-muted">App Updates</p>
+              <h3 className="display-title mt-3 text-[28px] leading-none text-primary">{updateHeadline}</h3>
+              <p className="mt-3 text-sm leading-7 text-secondary">
+                {updateMessage}
+              </p>
+              <div className="mt-4 space-y-2 font-['JetBrains_Mono'] text-[11px] uppercase tracking-[0.16em] text-secondary">
+                <p>Installed {updateState.currentVersion || appVersion}</p>
+                {updateState.availableVersion ? <p>Available {updateState.availableVersion}</p> : null}
+                {updateState.downloadedVersion ? <p>Ready {updateState.downloadedVersion}</p> : null}
+                {updateState.state === 'downloading' ? <p>Progress {Math.round(updateState.progress || 0)}%</p> : null}
+              </div>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => libraryApi?.checkForUpdates?.()}
+                  disabled={isCheckingUpdates}
+                  className={`border px-4 py-2 font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.2em] transition-colors duration-150 ${isCheckingUpdates ? 'border-white/8 bg-white/[0.03] text-muted' : 'border-white/12 bg-black/10 text-primary hover:border-white/20 hover:bg-white/[0.05]'}`}
+                >
+                  {isCheckingUpdates ? 'Checking...' : 'Check Now'}
+                </button>
+                {canInstallUpdate ? (
+                  <button
+                    type="button"
+                    onClick={() => libraryApi?.installUpdate?.()}
+                    className="border border-accent bg-accent px-4 py-2 font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.2em] text-white transition-colors duration-150 hover:bg-[#ff564b]"
+                  >
+                    Restart To Update
+                  </button>
+                ) : null}
               </div>
             </section>
 

@@ -9,11 +9,16 @@
   },
   "scripts": {
     "dev": "node scripts/dev.mjs",
-    "build": "vite build && electron-builder",
+    "build": "node scripts/generate-mac-icon.mjs && vite build && electron-builder --config .electron-builder.config.js --publish never",
+    "build:mac:intel": "node scripts/generate-mac-icon.mjs && vite build && electron-builder --config .electron-builder.config.js --mac dmg --x64 --publish never",
+    "build:mac:apple": "node scripts/generate-mac-icon.mjs && vite build && electron-builder --config .electron-builder.config.js --mac dmg --arm64 --publish never",
+    "build:mac:all": "node scripts/generate-mac-icon.mjs && vite build && electron-builder --config .electron-builder.config.js --mac dmg --x64 --arm64 --publish never",
+    "release": "node scripts/generate-mac-icon.mjs && vite build && electron-builder --config .electron-builder.config.js --publish always",
     "start": "npm run dev"
   },
   "dependencies": {
     "electron-store": "^8.1.0",
+    "electron-updater": "^6.8.3",
     "jszip": "^3.10.1",
     "node-unrar-js": "^2.0.0",
     "react": "^18.2.0",
@@ -25,6 +30,7 @@
     "concurrently": "^8.0.0",
     "electron": "^29.0.0",
     "electron-builder": "^23.3.3",
+    "png2icons": "^2.0.1",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.19",
     "vite": "^5.0.0",

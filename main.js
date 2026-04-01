@@ -7,6 +7,7 @@ const { fileURLToPath, pathToFileURL } = require('url');
 const JSZip = require('jszip');
 const Store = require('electron-store');
 const unrar = require('node-unrar-js');
+const { autoUpdater } = require('electron-updater');
 
 const { createExtractorFromFile } = unrar;
 const isDev = !app.isPackaged || process.env.DEV === 'true';
@@ -45,6 +46,7 @@ const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'bas
 
 let mainWindow = null;
 let isWindowFocused = true;
+let updaterInitialized = false;
 
 const libraryCache = sanitizeLibrary(libraryStore.get('library'));
 const extractionCache = new Map();
@@ -53,6 +55,14 @@ const extractionControllers = new Map();
 const extractionJobs = new Map();
 const focusWaiters = new Set();
 const pendingOpenFiles = [];
+let updateStatus = {
+  state: 'idle',
+  currentVersion: app.getVersion(),
+  availableVersion: null,
+  downloadedVersion: null,
+  progress: 0,
+  message: '',
+};
 
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows', 'true');
 app.commandLine.appendSwitch('disable-renderer-backgrounding', 'true');
@@ -76,6 +86,110 @@ function formatError(error) {
 
 function logDevError(scope, error) {
   console.error(`[${scope}] ${formatError(error)}`);
+}
+
+function sendUpdateStatus(targetWindow = mainWindow) {
+  if (!targetWindow || targetWindow.isDestroyed()) {
+    return;
+  }
+
+  targetWindow.webContents.send('update:status', updateStatus);
+}
+
+function setUpdateStatus(patch) {
+  updateStatus = {
+    ...updateStatus,
+    ...patch,
+  };
+
+  sendUpdateStatus();
+  return updateStatus;
+}
+
+function setupAutoUpdater() {
+  if (updaterInitialized) {
+    return;
+  }
+
+  updaterInitialized = true;
+
+  if (!app.isPackaged) {
+    setUpdateStatus({
+      state: 'development',
+      message: 'Auto-updates are available in packaged builds.',
+    });
+    return;
+  }
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('checking-for-update', () => {
+    setUpdateStatus({
+      state: 'checking',
+      availableVersion: null,
+      downloadedVersion: null,
+      progress: 0,
+      message: 'Checking for updates...',
+    });
+  });
+
+  autoUpdater.on('update-available', (info) => {
+    setUpdateStatus({
+      state: 'available',
+      availableVersion: info?.version || null,
+      downloadedVersion: null,
+      progress: 0,
+      message: info?.version ? `Update ${info.version} is available.` : 'An update is available.',
+    });
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    setUpdateStatus({
+      state: 'idle',
+      availableVersion: null,
+      downloadedVersion: null,
+      progress: 0,
+      message: 'You are up to date.',
+    });
+  });
+
+  autoUpdater.on('download-progress', (progress) => {
+    setUpdateStatus({
+      state: 'downloading',
+      progress: progress?.percent || 0,
+      message: progress?.percent
+        ? `Downloading update... ${Math.round(progress.percent)}%`
+        : 'Downloading update...',
+    });
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    setUpdateStatus({
+      state: 'downloaded',
+      downloadedVersion: info?.version || null,
+      progress: 100,
+      message: info?.version
+        ? `Update ${info.version} is ready to install.`
+        : 'Update is ready to install.',
+    });
+  });
+
+  autoUpdater.on('error', (error) => {
+    setUpdateStatus({
+      state: 'error',
+      progress: 0,
+      message: error?.message || 'Unable to check for updates.',
+    });
+  });
+
+  autoUpdater.checkForUpdatesAndNotify().catch((error) => {
+    setUpdateStatus({
+      state: 'error',
+      progress: 0,
+      message: error?.message || 'Unable to check for updates.',
+    });
+  });
 }
 
 process.on('uncaughtException', (error) => {
@@ -633,6 +747,7 @@ function createMainWindow() {
       version: app.getVersion(),
     });
     mainWindow.webContents.send('app:focus-change', isWindowFocused);
+    sendUpdateStatus(mainWindow);
 
     if (pendingOpenFiles.length) {
       mainWindow.webContents.send('files:dropped', pendingOpenFiles.splice(0));
@@ -725,6 +840,43 @@ ipcMain.handle('comic:get-app-info', async () => ({
   version: app.getVersion(),
 }));
 
+ipcMain.handle('update:check', async () => {
+  if (!app.isPackaged) {
+    return setUpdateStatus({
+      state: 'development',
+      message: 'Auto-updates are available in packaged builds.',
+    });
+  }
+
+  try {
+    await autoUpdater.checkForUpdates();
+    return updateStatus;
+  } catch (error) {
+    return setUpdateStatus({
+      state: 'error',
+      progress: 0,
+      message: error?.message || 'Unable to check for updates.',
+    });
+  }
+});
+
+ipcMain.handle('update:install', async () => {
+  if (updateStatus.state !== 'downloaded') {
+    return false;
+  }
+
+  setUpdateStatus({
+    state: 'installing',
+    message: 'Restarting to install update...',
+  });
+
+  setImmediate(() => {
+    autoUpdater.quitAndInstall();
+  });
+
+  return true;
+});
+
 ipcMain.on('comic:cancel-extraction', (_event, filePath) => {
   const controller = extractionControllers.get(filePath);
   if (controller) {
@@ -739,6 +891,7 @@ ipcMain.on('comic:renderer-ready', () => {
       settings: sanitizeSettings(libraryStore.get('settings')),
       version: app.getVersion(),
     });
+    sendUpdateStatus(mainWindow);
   }
 });
 
@@ -809,6 +962,7 @@ app.whenReady().then(async () => {
   await ensureTempRoot();
   registerMediaProtocol();
   createMainWindow();
+  setupAutoUpdater();
 });
 
 app.on('before-quit', async () => {

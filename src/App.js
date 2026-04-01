@@ -8,6 +8,8 @@ import WindowPane from './components/WindowPane';
 import { useLibraryContext, useReaderContext } from './context/AppContext';
 import { useLibrary } from './hooks/useLibrary';
 
+//TODO: IMPLEMENT OTA UPDATES USING ELECTRON-UPDATER, SEE https://www.electron.build/auto-update FOR REFERENCE
+
 function App() {
   const libraryState = useLibraryContext();
   const readerState = useReaderContext();

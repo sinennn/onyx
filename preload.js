@@ -5,6 +5,7 @@ const bootSubscribers = new Set();
 const focusSubscribers = new Set();
 const librarySubscribers = new Set();
 const settingsSubscribers = new Set();
+const updateSubscribers = new Set();
 
 let dropListenersBound = false;
 
@@ -103,6 +104,10 @@ ipcRenderer.on('settings:changed', (_event, settings) => {
   notify(settingsSubscribers, settings);
 });
 
+ipcRenderer.on('update:status', (_event, status) => {
+  notify(updateSubscribers, status);
+});
+
 contextBridge.exposeInMainWorld('comicAPI', {
   openFilePicker: () => ipcRenderer.invoke('comic:open-file-picker'),
   inspectComic: (filePath) => ipcRenderer.invoke('comic:inspect', filePath),
@@ -116,6 +121,8 @@ contextBridge.exposeInMainWorld('comicAPI', {
   removeFromLibrary: (filePath) => ipcRenderer.invoke('comic:remove-from-library', filePath),
   toggleFullscreen: () => ipcRenderer.invoke('comic:toggle-fullscreen'),
   getAppInfo: () => ipcRenderer.invoke('comic:get-app-info'),
+  checkForUpdates: () => ipcRenderer.invoke('update:check'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
   rendererReady: () => ipcRenderer.send('comic:renderer-ready'),
   onFilesDropped: (callback) => {
     fileDropSubscribers.add(callback);
@@ -145,6 +152,12 @@ contextBridge.exposeInMainWorld('comicAPI', {
     settingsSubscribers.add(callback);
     return () => {
       settingsSubscribers.delete(callback);
+    };
+  },
+  onUpdateStatus: (callback) => {
+    updateSubscribers.add(callback);
+    return () => {
+      updateSubscribers.delete(callback);
     };
   },
 });

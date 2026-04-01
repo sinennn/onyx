@@ -1,6 +1,6 @@
 module.exports = {
-  appId: 'com.openai.comicreader',
-  productName: 'Panel',
+  appId: 'com.sinennn.onyx',
+  productName: 'Onyx',
   directories: {
     output: 'release',
     buildResources: 'buildResources',
@@ -15,5 +15,11 @@ module.exports = {
     category: 'public.app-category.entertainment',
     icon: 'buildResources/icon.icns',
     target: ['dmg', 'zip'],
+  },
+  publish: {
+    provider: 'github',
+    owner: 'sinennn',
+    repo: 'onyx',
+    releaseType: 'release',
   },
 };
