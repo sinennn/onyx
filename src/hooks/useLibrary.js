@@ -13,6 +13,7 @@ import {
   UPDATE_SETTINGS,
 } from '../context/actions';
 import { useLibraryContext, useReaderContext } from '../context/AppContext';
+import { getDesktopApi as getComicAPI } from '../platform/desktopApi';
 
 function createThumbnailWorker() {
   return new Worker(new URL('../workers/thumbnailWorker.js', import.meta.url), { type: 'module' });
@@ -43,13 +44,6 @@ function blobToDataURL(blob) {
   });
 }
 
-function getComicAPI() {
-  if (typeof window !== 'undefined' && window.comicAPI) {
-    return window.comicAPI;
-  }
-
-  throw new Error('Desktop bridge unavailable. Launch Onyx through Electron to import comics.');
-}
 
 export function useLibrary() {
   const libraryState = useLibraryContext();

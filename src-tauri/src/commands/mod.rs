@@ -1,0 +1,115 @@
+use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
+
+use serde::{Deserialize, Serialize};
+
+pub mod app;
+pub mod library;
+pub mod updates;
+pub mod window;
+
+pub const LIBRARY_CHANGED: &str = "library_changed";
+pub const SETTINGS_CHANGED: &str = "settings_changed";
+pub const FILES_DROPPED: &str = "files_dropped";
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct LibraryEntry {
+    pub file_path: String,
+    pub title: String,
+    #[serde(rename = "coverURL")]
+    pub cover_url: String,
+    pub progress: u32,
+    pub page_count: u32,
+    pub last_opened: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Settings {
+    pub default_fit_mode: String,
+    pub remember_reading_position: bool,
+    pub show_progress_bars: bool,
+    pub theme: String,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self { default_fit_mode: "fit-width".into(), remember_reading_position: true, show_progress_bars: true, theme: "onyx".into() }
+    }
+}
+
+impl Settings {
+    pub fn sanitized(mut self) -> Self {
+        if !matches!(self.default_fit_mode.as_str(), "fit-width" | "fit-height" | "original") {
+            self.default_fit_mode = "fit-width".into();
+        }
+        if self.theme.is_empty() {
+            self.theme = "onyx".into();
+        }
+        self
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BootPayload {
+    pub library: Vec<LibraryEntry>,
+    pub settings: Settings,
+    pub version: String,
+}
+
+#[derive(Default)]
+pub struct BackendState {
+    pub library: Mutex<Vec<LibraryEntry>>,
+    pub settings: Mutex<Settings>,
+    pub extraction_cache: Mutex<HashMap<String, ExtractionResult>>,
+    pub inspection_cache: Mutex<HashMap<String, ExtractionResult>>,
+    pub cancellation: Mutex<HashMap<String, Arc<AtomicBool>>>,
+    pub renderer_ready: AtomicBool,
+    // Set while the window is unfocused; extraction waits, like the Electron build's waitIfBackgrounded.
+    pub window_blurred: Arc<AtomicBool>,
+    pub pending_open_files: Mutex<Vec<String>>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComicInspection {
+    pub title: String,
+    pub page_count: u32,
+    pub cover_page: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtractionResult {
+    pub directory: String,
+    pub pages: Vec<String>,
+    pub title: String,
+    pub page_count: u32,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateStatus {
+    pub state: String,
+    pub current_version: String,
+    pub available_version: Option<String>,
+    pub downloaded_version: Option<String>,
+    pub progress: f64,
+    pub message: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LibraryEntry;
+
+    #[test]
+    fn library_entry_uses_renderer_field_names() {
+        let json = r#"{"filePath":"/a.cbz","title":"A","coverURL":"data:x","progress":4,"pageCount":9,"lastOpened":null}"#;
+        let entry: LibraryEntry = serde_json::from_str(json).unwrap();
+        assert_eq!(entry.cover_url, "data:x");
+        assert_eq!(serde_json::to_value(&entry).unwrap(), serde_json::from_str::<serde_json::Value>(json).unwrap());
+    }
+}
