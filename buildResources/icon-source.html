@@ -5,8 +5,8 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@600&display=block" rel="stylesheet">
 <style>
   /* Source for the Onyx app icon, modelled on the sidebar OX badge.
-     Render: Chrome --headless --default-background-color=00000000 --window-size=1024,1024 --screenshot "icon-source.html?body=0.8"
-     body=0.8 for the bundle icon (then `npx tauri icon <png> -o src-tauri/icons`), body=0.57 for buildResources/icon.png (UI). */
+     Render: Chrome --headless --default-background-color=00000000 --window-size=1024,1024 --screenshot "icon-source.html?body=0.8047"
+     body=0.8047 (Apple's 824/1024 grid) for the bundle icon (then `npx tauri icon <png> -o src-tauri/icons`), body=0.57 for buildResources/icon.png (UI). */
   html, body { margin: 0; width: 1024px; height: 1024px; background: transparent; }
   body { display: flex; align-items: center; justify-content: center; }
   .tile {
@@ -14,9 +14,8 @@
     width: var(--size); height: var(--size);
     box-sizing: border-box;
     border-radius: calc(var(--size) * 0.225);
-    background: linear-gradient(180deg, #232325 0%, #1a1a1c 55%, #151517 100%);
+    background: #000;
     border: calc(var(--size) * 0.012) solid rgba(255, 255, 255, 0.08);
-    box-shadow: inset 0 calc(var(--size) * 0.006) 0 rgba(255, 255, 255, 0.05);
     display: flex; align-items: center; justify-content: center;
   }
   .mark {
