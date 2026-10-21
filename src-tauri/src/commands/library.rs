@@ -30,8 +30,26 @@ pub fn is_comic_path(path: &str) -> bool {
     matches!(extension(path).as_str(), "cbz" | "zip" | "cbr" | "rar")
 }
 
-fn is_rar(path: &str) -> bool {
-    matches!(extension(path).as_str(), "cbr" | "rar")
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ArchiveKind {
+    Zip,
+    Rar,
+}
+
+const RAR_SIGNATURE: &[u8] = b"Rar!\x1a\x07";
+const ZIP_SIGNATURES: &[&[u8]] = &[b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"];
+const SEVEN_ZIP_SIGNATURE: &[u8] = b"7z\xbc\xaf\x27\x1c";
+
+// Comic archives are often mislabelled (a ZIP saved as .cbr, or the reverse), so the file's
+// signature wins over its extension, as in MComix and other readers..
+fn archive_kind(path: &str) -> Result<ArchiveKind, String> {
+    let mut header = Vec::with_capacity(8);
+    fs::File::open(path).and_then(|file| file.take(8).read_to_end(&mut header)).map_err(|error| error.to_string())?;
+    if header.starts_with(RAR_SIGNATURE) { return Ok(ArchiveKind::Rar); }
+    if ZIP_SIGNATURES.iter().any(|signature| header.starts_with(signature)) { return Ok(ArchiveKind::Zip); }
+    if header.starts_with(SEVEN_ZIP_SIGNATURE) { return Err("This comic is a 7-Zip (CB7) archive, which Onyx can't open yet.".into()); }
+    // No known signature at the start (e.g. a self-extracting RAR): fall back to the extension.
+    Ok(if matches!(extension(path).as_str(), "cbr" | "rar") { ArchiveKind::Rar } else { ArchiveKind::Zip })
 }
 
 fn title_from_path(path: &str) -> String {
@@ -120,7 +138,11 @@ fn page_file_name(index: usize, name: &str) -> String {
 }
 
 fn rar_error(error: unrar::error::UnrarError) -> String {
-    format!("Unable to read CBR archive: {error}")
+    format!("Unable to read RAR archive: {error}")
+}
+
+fn zip_error(error: zip::result::ZipError) -> String {
+    format!("Unable to read ZIP archive: {error}")
 }
 
 fn rar_entries(path: &str) -> Result<Vec<String>, String> {
@@ -136,7 +158,7 @@ fn rar_entries(path: &str) -> Result<Vec<String>, String> {
 
 fn zip_entries(path: &str) -> Result<Vec<String>, String> {
     let file = fs::File::open(path).map_err(|error| error.to_string())?;
-    let mut archive = ZipArchive::new(file).map_err(|error| error.to_string())?;
+    let mut archive = ZipArchive::new(file).map_err(zip_error)?;
     Ok((0..archive.len())
         .filter_map(|index| archive.by_index(index).ok().filter(|entry| entry.is_file()).map(|entry| entry.name().to_string()))
         .filter(|name| is_image(name))
@@ -144,7 +166,10 @@ fn zip_entries(path: &str) -> Result<Vec<String>, String> {
 }
 
 fn archive_images(path: &str) -> Result<Vec<String>, String> {
-    let mut names = if is_rar(path) { rar_entries(path)? } else { zip_entries(path)? };
+    let mut names = match archive_kind(path)? {
+        ArchiveKind::Rar => rar_entries(path)?,
+        ArchiveKind::Zip => zip_entries(path)?,
+    };
     sort_natural(&mut names);
     if names.is_empty() { return Err(NO_PAGES.into()); }
     Ok(names)
@@ -188,7 +213,7 @@ fn extract_rar(path: &str, directory: &Path, names: &[String], cancellation: &At
 
 fn extract_zip(path: &str, directory: &Path, names: &[String], cancellation: &AtomicBool, paused: &AtomicBool) -> Result<Vec<String>, String> {
     let file = fs::File::open(path).map_err(|error| error.to_string())?;
-    let mut archive = ZipArchive::new(file).map_err(|error| error.to_string())?;
+    let mut archive = ZipArchive::new(file).map_err(zip_error)?;
     let mut pages = Vec::with_capacity(names.len());
     for (index, name) in names.iter().enumerate() {
         checkpoint(cancellation, paused)?;
@@ -203,7 +228,10 @@ fn extract_zip(path: &str, directory: &Path, names: &[String], cancellation: &At
 }
 
 fn extract_archive(path: &str, directory: &Path, names: &[String], cancellation: &AtomicBool, paused: &AtomicBool) -> Result<Vec<String>, String> {
-    let pages = if is_rar(path) { extract_rar(path, directory, names, cancellation, paused)? } else { extract_zip(path, directory, names, cancellation, paused)? };
+    let pages = match archive_kind(path)? {
+        ArchiveKind::Rar => extract_rar(path, directory, names, cancellation, paused)?,
+        ArchiveKind::Zip => extract_zip(path, directory, names, cancellation, paused)?,
+    };
     if pages.is_empty() { return Err(NO_PAGES.into()); }
     Ok(pages)
 }
@@ -406,6 +434,59 @@ pub fn remove_from_library(app: AppHandle, file_path: String, state: State<'_, B
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn scratch_dir(name: &str) -> PathBuf {
+        let directory = std::env::temp_dir().join(format!("onyx-test-{name}-{}", std::process::id()));
+        reset_directory(&directory).unwrap();
+        directory
+    }
+
+    fn write_zip(path: &Path, pages: &[&str]) {
+        use std::io::Write;
+        let mut writer = zip::ZipWriter::new(fs::File::create(path).unwrap());
+        let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        for page in pages {
+            writer.start_file(*page, options).unwrap();
+            writer.write_all(page.as_bytes()).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+
+    // Issue #1: a ZIP saved with a .cbr extension failed with "Not a RAR archive".
+    #[test]
+    fn opens_zip_archives_named_cbr() {
+        let directory = scratch_dir("zip-as-cbr");
+        let archive = directory.join("comic.cbr");
+        write_zip(&archive, &["page10.jpg", "page2.jpg", "notes.txt", "page1.jpg"]);
+        let archive = archive.to_string_lossy().to_string();
+
+        assert_eq!(archive_kind(&archive), Ok(ArchiveKind::Zip));
+        let names = archive_images(&archive).unwrap();
+        assert_eq!(names, ["page1.jpg", "page2.jpg", "page10.jpg"]);
+        let out = directory.join("out");
+        reset_directory(&out).unwrap();
+        let pages = extract_archive(&archive, &out, &names, &AtomicBool::new(false), &AtomicBool::new(false)).unwrap();
+        assert_eq!(fs::read_to_string(&pages[2]).unwrap(), "page10.jpg");
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn detects_archive_kind_from_signature_before_extension() {
+        let directory = scratch_dir("signatures");
+        let write = |name: &str, bytes: &[u8]| {
+            let path = directory.join(name);
+            fs::write(&path, bytes).unwrap();
+            path.to_string_lossy().to_string()
+        };
+
+        assert_eq!(archive_kind(&write("rar4.cbz", b"Rar!\x1a\x07\x00rest")), Ok(ArchiveKind::Rar));
+        assert_eq!(archive_kind(&write("rar5.zip", b"Rar!\x1a\x07\x01\x00rest")), Ok(ArchiveKind::Rar));
+        assert_eq!(archive_kind(&write("zip.rar", b"PK\x03\x04rest")), Ok(ArchiveKind::Zip));
+        assert!(archive_kind(&write("seven.cbr", b"7z\xbc\xaf\x27\x1crest")).unwrap_err().contains("7-Zip"));
+        assert_eq!(archive_kind(&write("unknown.cbr", b"MZ-sfx")), Ok(ArchiveKind::Rar));
+        assert_eq!(archive_kind(&write("tiny.cbz", b"P")), Ok(ArchiveKind::Zip));
+        let _ = fs::remove_dir_all(directory);
+    }
 
     #[test]
     fn sorts_pages_naturally() {
