@@ -1,39 +1,41 @@
 {
   "name": "onyx",
   "version": "1.0.0",
-  "description": "Premium macOS comic reader built with Electron and React",
+  "description": "Premium macOS comic reader built with Tauri and React",
   "private": true,
-  "main": "main.js",
   "author": {
     "name": "Sinen Ernest"
   },
   "scripts": {
-    "dev": "node scripts/dev.mjs",
-    "build": "node scripts/generate-mac-icon.mjs && vite build && electron-builder --config .electron-builder.config.js --publish never",
-    "build:mac:intel": "node scripts/generate-mac-icon.mjs && vite build && electron-builder --config .electron-builder.config.js --mac dmg --x64 --publish never",
-    "build:mac:apple": "node scripts/generate-mac-icon.mjs && vite build && electron-builder --config .electron-builder.config.js --mac dmg --arm64 --publish never",
-    "build:mac:all": "node scripts/generate-mac-icon.mjs && vite build && electron-builder --config .electron-builder.config.js --mac dmg --x64 --arm64 --publish never",
-    "release": "node scripts/generate-mac-icon.mjs && vite build && electron-builder --config .electron-builder.config.js --publish always",
-    "start": "npm run dev"
+    "dev": "tauri dev",
+    "dev:frontend": "vite",
+    "build:frontend": "vite build",
+    "build": "tauri build",
+    "build:mac:intel": "tauri build --target x86_64-apple-darwin",
+    "build:mac:apple": "tauri build --target aarch64-apple-darwin",
+    "build:mac:all": "tauri build --target universal-apple-darwin",
+    "start": "npm run dev",
+    "test": "vitest run",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "tauri": "tauri",
+    "release": "node scripts/release.mjs"
   },
   "dependencies": {
-    "electron-store": "^8.1.0",
-    "electron-updater": "^6.8.3",
-    "jszip": "^3.10.1",
-    "node-unrar-js": "^2.0.0",
+    "@tauri-apps/api": "~2.11.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "~2.11.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
+    "@testing-library/dom": "^10.4.0",
     "@vitejs/plugin-react": "^4.0.0",
     "autoprefixer": "^10.4.20",
-    "concurrently": "^8.0.0",
-    "electron": "^29.0.0",
-    "electron-builder": "^23.3.3",
-    "png2icons": "^2.0.1",
+    "jsdom": "^25.0.1",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.19",
     "vite": "^5.0.0",
-    "wait-on": "^7.0.0"
+    "vitest": "^2.1.9"
   }
 }

@@ -33,7 +33,6 @@ module.exports = defineConfig(({ mode }) => ({
       output: {
         manualChunks: {
           react: ['react', 'react-dom'],
-          jszip: ['jszip'],
         },
       },
     },

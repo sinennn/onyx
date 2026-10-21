@@ -1,0 +1,75 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Onyx",
+  "version": "../package.json",
+  "identifier": "com.sinennn.onyx",
+  "build": {
+    "beforeDevCommand": "npm run dev:frontend",
+    "devUrl": "http://127.0.0.1:5173",
+    "beforeBuildCommand": "npm run build:frontend",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Onyx",
+        "width": 1540,
+        "height": 940,
+        "minWidth": 1120,
+        "minHeight": 720,
+        "resizable": true,
+        "backgroundColor": "#0d0d0f",
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": {
+          "x": 18,
+          "y": 22
+        },
+        "dragDropEnabled": true
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$TEMP/onyx-cache/**"
+        ]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "category": "Entertainment",
+    "icon": [
+      "../buildResources/icon.png",
+      "../buildResources/icon.icns"
+    ],
+    "fileAssociations": [
+      {
+        "ext": [
+          "cbz",
+          "cbr",
+          "zip",
+          "rar"
+        ],
+        "description": "Comic archive",
+        "role": "Viewer"
+      }
+    ],
+    "createUpdaterArtifacts": false
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU1OUY5MTQxQzczMTdFMTAKUldRUWZqSEhRWkdmNVE3TjNlcnUvL2prcWJxVTlJcTc5V3JSL2JFRHk0Q29nSDF4dk85UFo3UzYK",
+      "endpoints": [
+        "https://github.com/sinennn/onyx/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}

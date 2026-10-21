@@ -1,15 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import CoverCard from '../components/CoverCard';
 import ContextMenu from '../components/ContextMenu';
 import DropZone from '../components/DropZone';
 import { useLibraryContext } from '../context/AppContext';
 import { useDominantColor } from '../hooks/useDominantColor';
+import { getDesktopApi } from '../platform/desktopApi';
 
 function Library({ libraryApi }) {
   const { library, settings } = useLibraryContext();
   const [contextMenu, setContextMenu] = useState(null);
   const [dragActive, setDragActive] = useState(false);
-  const dragCounterRef = useRef(0);
 
   const sortedLibrary = useMemo(() => (
     [...library].sort((left, right) => {
@@ -42,36 +42,11 @@ function Library({ libraryApi }) {
   const { glowColor, primeColor } = useDominantColor(heroComic?.coverURL);
 
   useEffect(() => {
-    const onDragEnter = (event) => {
-      if (!event.dataTransfer?.types?.includes('Files')) {
-        return;
-      }
-
-      dragCounterRef.current += 1;
-      setDragActive(true);
-    };
-
-    const onDragLeave = () => {
-      dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
-      if (dragCounterRef.current === 0) {
-        setDragActive(false);
-      }
-    };
-
-    const onDrop = () => {
-      dragCounterRef.current = 0;
-      setDragActive(false);
-    };
-
-    window.addEventListener('dragenter', onDragEnter);
-    window.addEventListener('dragleave', onDragLeave);
-    window.addEventListener('drop', onDrop);
-
-    return () => {
-      window.removeEventListener('dragenter', onDragEnter);
-      window.removeEventListener('dragleave', onDragLeave);
-      window.removeEventListener('drop', onDrop);
-    };
+    try {
+      return getDesktopApi().onDragStateChange(setDragActive);
+    } catch {
+      return undefined;
+    }
   }, []);
 
   useEffect(() => {
