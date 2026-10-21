@@ -41,7 +41,7 @@ const ZIP_SIGNATURES: &[&[u8]] = &[b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"];
 const SEVEN_ZIP_SIGNATURE: &[u8] = b"7z\xbc\xaf\x27\x1c";
 
 // Comic archives are often mislabelled (a ZIP saved as .cbr, or the reverse), so the file's
-// signature wins over its extension, as in MComix and other readers.
+// signature wins over its extension, as in MComix and other readers..
 fn archive_kind(path: &str) -> Result<ArchiveKind, String> {
     let mut header = Vec::with_capacity(8);
     fs::File::open(path).and_then(|file| file.take(8).read_to_end(&mut header)).map_err(|error| error.to_string())?;
