@@ -10,7 +10,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use unrar::Archive as RarArchive;
 use zip::ZipArchive;
 
-use super::{BackendState, ComicInspection, ExtractionResult, LibraryEntry, Settings, LIBRARY_CHANGED, SETTINGS_CHANGED};
+use super::{BackendState, ComicInspection, ExtractionResult, LibraryEntry, Settings, SETTINGS_CHANGED};
 
 const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "bmp", "tif", "tiff", "avif"];
 const STORE_FILE: &str = "onyx-library.json";
@@ -243,7 +243,7 @@ fn persist_state(app: &AppHandle, state: &BackendState) -> Result<(), String> {
         "library": state.library.lock().map_err(|_| "library lock poisoned")?.clone(),
         "settings": state.settings.lock().map_err(|_| "settings lock poisoned")?.clone(),
     });
-    let bytes = serde_json::to_vec_pretty(&snapshot).map_err(|error| error.to_string())?;
+    let bytes = serde_json::to_vec(&snapshot).map_err(|error| error.to_string())?;
     let target = root.join(STORE_FILE);
     let staging = root.join(format!("{STORE_FILE}.tmp"));
     fs::write(&staging, bytes).map_err(|error| error.to_string())?;
@@ -283,10 +283,6 @@ pub fn load_state(app: &AppHandle, state: &BackendState) {
 fn with_title(mut entry: LibraryEntry) -> LibraryEntry {
     if entry.title.is_empty() { entry.title = title_from_path(&entry.file_path); }
     entry
-}
-
-fn emit_library(app: &AppHandle, state: &BackendState) -> Result<(), String> {
-    app.emit(LIBRARY_CHANGED, state.library.lock().map_err(|_| "library lock poisoned")?.clone()).map_err(|error| error.to_string())
 }
 
 fn emit_settings(app: &AppHandle, state: &BackendState) -> Result<(), String> {
@@ -364,7 +360,6 @@ pub fn extract_comic(app: AppHandle, file_path: String, state: State<'_, Backend
         }
     }
     persist_state(&app, &state)?;
-    emit_library(&app, &state)?;
     Ok(result)
 }
 
@@ -390,7 +385,6 @@ pub fn sync_library(app: AppHandle, next_library: Vec<LibraryEntry>, state: Stat
     let cleaned = next_library.into_iter().filter(|entry| !entry.file_path.is_empty()).map(with_title).collect::<Vec<_>>();
     *state.library.lock().map_err(|_| "library lock poisoned")? = cleaned.clone();
     persist_state(&app, &state)?;
-    emit_library(&app, &state)?;
     Ok(cleaned)
 }
 
@@ -415,8 +409,7 @@ pub fn save_progress(app: AppHandle, file_path: String, page: u32, state: State<
             library.push(LibraryEntry { title: title_from_path(&file_path), file_path, progress: page, last_opened, ..Default::default() });
         }
     }
-    persist_state(&app, &state)?;
-    emit_library(&app, &state)
+    persist_state(&app, &state)
 }
 
 #[tauri::command(async)]
@@ -427,8 +420,7 @@ pub fn remove_from_library(app: AppHandle, file_path: String, state: State<'_, B
             let _ = fs::remove_dir_all(cached.directory);
         }
     }
-    persist_state(&app, &state)?;
-    emit_library(&app, &state)
+    persist_state(&app, &state)
 }
 
 #[cfg(test)]

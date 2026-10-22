@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@600&display=block" rel="stylesheet">
+<style>
+  /* Source for the Onyx app icon, modelled on the sidebar OX badge.
+     Render: Chrome --headless --default-background-color=00000000 --window-size=1024,1024 --screenshot "icon-source.html?body=0.8047"
+     body=0.8047 (Apple's 824/1024 grid) for the bundle icon (then `npx tauri icon <png> -o src-tauri/icons`), body=0.57 for buildResources/icon.png (UI). */
+  html, body { margin: 0; width: 1024px; height: 1024px; background: transparent; }
+  body { display: flex; align-items: center; justify-content: center; }
+  .tile {
+    --size: calc(1024px * var(--body));
+    width: var(--size); height: var(--size);
+    box-sizing: border-box;
+    border-radius: calc(var(--size) * 0.225);
+    background: #000;
+    border: calc(var(--size) * 0.012) solid rgba(255, 255, 255, 0.08);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .mark {
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 600;
+    font-size: calc(var(--size) * 0.3125);
+    letter-spacing: 0.2em;
+    padding-left: 0.2em; /* balance the trailing letter-spacing so OX sits centred */
+    color: rgb(240 237 230);
+    line-height: 1;
+  }
+</style>
+</head>
+<body>
+  <div class="tile"><span class="mark">OX</span></div>
+  <script>
+    const body = new URLSearchParams(location.search).get('body') || '0.8';
+    document.documentElement.style.setProperty('--body', body);
+  </script>
+</body>
+</html>

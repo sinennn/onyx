@@ -9,7 +9,6 @@ pub mod library;
 pub mod updates;
 pub mod window;
 
-pub const LIBRARY_CHANGED: &str = "library_changed";
 pub const SETTINGS_CHANGED: &str = "settings_changed";
 pub const FILES_DROPPED: &str = "files_dropped";
 

@@ -35,6 +35,8 @@ function upsertEntry(list, entry) {
     : [...list, nextEntry];
 }
 
+const LEGACY_COVER_MIN_LENGTH = 200_000;
+
 function blobToDataURL(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -65,6 +67,7 @@ export function useLibrary() {
   const thumbnailMessageIdRef = useRef(0);
   const coverQueueRef = useRef(new Set());
   const bootedRef = useRef(false);
+  const legacyCoversCompactedRef = useRef(false);
   const pendingExtractionRef = useRef('');
   const enqueueToastRef = useRef(null);
   const ingestFilesRef = useRef(null);
@@ -138,6 +141,27 @@ export function useLibrary() {
     return worker;
   }, []);
 
+  const renderThumbnail = useCallback(async (source) => {
+    const response = await fetch(source);
+    const blob = await response.blob();
+    const worker = ensureThumbnailWorker();
+    const buffer = await blob.arrayBuffer();
+    const id = thumbnailMessageIdRef.current + 1;
+    thumbnailMessageIdRef.current = id;
+
+    const thumbnailBlob = await new Promise((resolve, reject) => {
+      thumbnailPromisesRef.current.set(id, { resolve, reject });
+      worker.postMessage({
+        type: 'generate-thumbnail',
+        id,
+        buffer,
+        mimeType: blob.type || 'image/png',
+      }, [buffer]);
+    });
+
+    return blobToDataURL(thumbnailBlob);
+  }, [ensureThumbnailWorker]);
+
   const generateCoverThumbnail = useCallback(async (comic, coverSource) => {
     if (!coverSource || comic.coverURL || coverQueueRef.current.has(comic.filePath)) {
       return;
@@ -146,24 +170,7 @@ export function useLibrary() {
     coverQueueRef.current.add(comic.filePath);
 
     try {
-      const response = await fetch(coverSource);
-      const blob = await response.blob();
-      const worker = ensureThumbnailWorker();
-      const buffer = await blob.arrayBuffer();
-      const id = thumbnailMessageIdRef.current + 1;
-      thumbnailMessageIdRef.current = id;
-
-      const thumbnailBlob = await new Promise((resolve, reject) => {
-        thumbnailPromisesRef.current.set(id, { resolve, reject });
-        worker.postMessage({
-          type: 'generate-thumbnail',
-          id,
-          buffer,
-          mimeType: blob.type || 'image/png',
-        }, [buffer]);
-      });
-
-      const coverURL = await blobToDataURL(thumbnailBlob);
+      const coverURL = await renderThumbnail(coverSource);
       await patchComic({
         filePath: comic.filePath,
         coverURL,
@@ -173,7 +180,7 @@ export function useLibrary() {
     } finally {
       coverQueueRef.current.delete(comic.filePath);
     }
-  }, [enqueueToast, ensureThumbnailWorker, patchComic]);
+  }, [enqueueToast, patchComic, renderThumbnail]);
 
   const ingestFiles = useCallback(async (filePaths) => {
     const uniquePaths = [...new Set(filePaths)].filter(Boolean);
@@ -430,6 +437,43 @@ export function useLibrary() {
       thumbnailWorkerRef.current = null;
     };
   }, []);
+
+  // Covers made by older builds are full-size PNGs (~1MB each). Re-encode them once, from the stored
+  // image, so the library stays small enough to sync quickly.
+  useEffect(() => {
+    if (legacyCoversCompactedRef.current) {
+      return undefined;
+    }
+
+    const oversized = libraryState.library.filter((comic) => (
+      comic.coverURL?.startsWith('data:image/png') && comic.coverURL.length > LEGACY_COVER_MIN_LENGTH
+    ));
+    if (!oversized.length) {
+      return undefined;
+    }
+
+    legacyCoversCompactedRef.current = true;
+
+    const compactCovers = async () => {
+      const compacted = new Map();
+      for (const comic of oversized) {
+        try {
+          compacted.set(comic.filePath, await renderThumbnail(comic.coverURL));
+        } catch (error) {
+          // Keep the existing cover if it cannot be re-encoded.
+        }
+      }
+
+      if (compacted.size) {
+        await syncLibrary(libraryRef.current.map((comic) => (
+          compacted.has(comic.filePath) ? { ...comic, coverURL: compacted.get(comic.filePath) } : comic
+        )));
+      }
+    };
+
+    void compactCovers();
+    return undefined;
+  }, [libraryState.library, renderThumbnail, syncLibrary]);
 
   useEffect(() => {
     const missingCovers = libraryState.library.filter((comic) => !comic.coverURL);
