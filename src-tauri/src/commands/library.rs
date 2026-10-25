@@ -21,6 +21,8 @@ const ARCHIVE_EXTENSIONS: &[&str] = &["cbz", "zip", "cbr", "rar", "cb7", "7z"];
 // app's cache folder and are kept for the most recently read comics.
 const PREVIEW_DIR: &str = "onyx-cache";
 const PAGES_DIR: &str = "pages";
+// Up to this many pages are read individually from a non-solid 7-Zip archive (see extract_seven_zip).
+const DIRECT_READ_LIMIT: usize = 8;
 const NO_PAGES: &str = "No readable pages were found in this archive.";
 const CANCELLED: &str = "Extraction cancelled";
 
@@ -269,8 +271,10 @@ fn extract_rar(path: &str, directory: &Path, names: &[String], cancellation: &At
     Ok(names.iter().map(|name| targets[name.as_str()].to_string_lossy().to_string()).collect())
 }
 
-// 7-Zip archives are usually solid, so entries are decoded in archive order and the unwanted ones
-// are read through and discarded.
+// A few pages (e.g. a cover) from a non-solid archive are read directly, since each file is
+// compressed separately and the stored order may put the cover last. Otherwise entries are decoded
+// in one pass in stored order, reading through unwanted ones and stopping once every requested page
+// is out: for a solid archive that is the only option, and for a whole comic it is the fastest.
 fn extract_seven_zip(path: &str, directory: &Path, names: &[String], cancellation: &AtomicBool, paused: &AtomicBool) -> Result<Vec<String>, String> {
     let mut targets = std::collections::HashMap::with_capacity(names.len());
     for (index, name) in names.iter().enumerate() {
@@ -278,6 +282,15 @@ fn extract_seven_zip(path: &str, directory: &Path, names: &[String], cancellatio
     }
 
     let mut reader = SevenZipReader::open(path, Password::empty()).map_err(seven_zip_error)?;
+    if !reader.archive().is_solid && names.len() <= DIRECT_READ_LIMIT {
+        for name in names {
+            checkpoint(cancellation, paused)?;
+            let bytes = reader.read_file(name).map_err(seven_zip_error)?;
+            fs::write(&targets[name.as_str()], bytes).map_err(|error| error.to_string())?;
+        }
+        return Ok(names.iter().map(|name| targets[name.as_str()].to_string_lossy().to_string()).collect());
+    }
+
     let mut remaining = targets.len();
     let mut interrupted = None;
     reader.for_each_entries(|entry, data| {
@@ -672,24 +685,31 @@ mod tests {
             fs::write(source.join("Issue 1").join(page), page).unwrap();
         }
         fs::write(source.join("Issue 1").join("info.txt"), "not a page").unwrap();
-        let archive = directory.join("comic.cb7");
-        sevenz_rust2::compress_to_path(&source, &archive).unwrap();
-        let archive = archive.to_string_lossy().to_string();
+        let non_solid = directory.join("non-solid.cb7");
+        sevenz_rust2::compress_to_path(&source, &non_solid).unwrap();
+        let solid = directory.join("solid.cb7");
+        let mut writer = sevenz_rust2::ArchiveWriter::create(&solid).unwrap();
+        writer.push_source_path(&source, |_| true).unwrap();
+        writer.finish().unwrap();
 
-        assert_eq!(archive_kind(&archive), Ok(ArchiveKind::SevenZip));
-        let names = archive_images(&archive).unwrap();
-        assert_eq!(names, ["Issue 1/page1.jpg", "Issue 1/page2.jpg", "Issue 1/page10.jpg"]);
+        for (archive, expect_solid) in [(non_solid, false), (solid, true)] {
+            let archive = archive.to_string_lossy().to_string();
+            assert_eq!(SevenZipArchive::open(&archive).unwrap().is_solid, expect_solid, "{archive}");
+            assert_eq!(archive_kind(&archive), Ok(ArchiveKind::SevenZip));
+            let names = archive_images(&archive).unwrap();
+            assert_eq!(names, ["Issue 1/page1.jpg", "Issue 1/page2.jpg", "Issue 1/page10.jpg"]);
 
-        let out = directory.join("out");
-        reset_directory(&out).unwrap();
-        let cover = extract_archive(&archive, &out, &names[..1], &AtomicBool::new(false), &AtomicBool::new(false)).unwrap();
-        assert_eq!(fs::read_to_string(&cover[0]).unwrap(), "page1.jpg");
-        reset_directory(&out).unwrap();
-        let pages = extract_archive(&archive, &out, &names, &AtomicBool::new(false), &AtomicBool::new(false)).unwrap();
-        assert_eq!(pages.iter().map(|page| fs::read_to_string(page).unwrap()).collect::<Vec<_>>(), ["page1.jpg", "page2.jpg", "page10.jpg"]);
+            let out = directory.join("out");
+            reset_directory(&out).unwrap();
+            let cover = extract_archive(&archive, &out, &names[..1], &AtomicBool::new(false), &AtomicBool::new(false)).unwrap();
+            assert_eq!(fs::read_to_string(&cover[0]).unwrap(), "page1.jpg");
+            reset_directory(&out).unwrap();
+            let pages = extract_archive(&archive, &out, &names, &AtomicBool::new(false), &AtomicBool::new(false)).unwrap();
+            assert_eq!(pages.iter().map(|page| fs::read_to_string(page).unwrap()).collect::<Vec<_>>(), ["page1.jpg", "page2.jpg", "page10.jpg"]);
 
-        let cancelled = extract_archive(&archive, &out, &names, &AtomicBool::new(true), &AtomicBool::new(false));
-        assert_eq!(cancelled, Err(CANCELLED.to_string()));
+            let cancelled = extract_archive(&archive, &out, &names, &AtomicBool::new(true), &AtomicBool::new(false));
+            assert_eq!(cancelled, Err(CANCELLED.to_string()));
+        }
         let _ = fs::remove_dir_all(directory);
     }
 
