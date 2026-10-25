@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import PagedView from '../components/PagedView';
 import ThumbnailStrip from '../components/ThumbnailStrip';
 import Toolbar from '../components/Toolbar';
 import {
@@ -7,9 +8,18 @@ import {
   SET_TOOLBAR_VISIBILITY,
   TOGGLE_THUMBNAILS,
 } from '../context/actions';
-import { useReaderContext } from '../context/AppContext';
+import { useLibraryContext, useReaderContext } from '../context/AppContext';
 import { useIntersection } from '../hooks/useIntersection';
 import { useKeyNav } from '../hooks/useKeyNav';
+import {
+  isPaged,
+  nextLayout,
+  nextPage,
+  pageLabel,
+  previousPage,
+  spreadStart,
+  visiblePages,
+} from '../reader/pagination';
 
 const fitOrder = ['fit-width', 'fit-height', 'original'];
 const CHROME_IDLE_MS = 1800;
@@ -58,7 +68,16 @@ function Reader({ libraryApi }) {
     toolbarVisible,
     dispatch,
   } = useReaderContext();
+  const { settings } = useLibraryContext();
+  const layout = settings.readingLayout || 'scroll';
+  const direction = settings.readingDirection || 'ltr';
+  const paged = isPaged(layout);
   const chromeTimerRef = useRef(null);
+  const previousLayoutRef = useRef(layout);
+  // libraryApi is a new object on every App render; effects read the latest one from this ref so
+  // they only re-run when the page actually changes.
+  const libraryApiRef = useRef(libraryApi);
+  libraryApiRef.current = libraryApi;
   const scrollContainerRef = useRef(null);
   const pageRefs = useRef([]);
   const resumeScrollPendingRef = useRef(false);
@@ -67,8 +86,16 @@ function Reader({ libraryApi }) {
   const pageCount = currentComic?.pages?.length || currentComic?.pageCount || 0;
   const pages = currentComic?.pages || [];
 
-  const goToPage = useCallback((nextPage) => {
-    const clamped = Math.max(0, Math.min(pageCount - 1, nextPage));
+  const goToPage = useCallback((requestedPage) => {
+    const clamped = Math.max(0, Math.min(pageCount - 1, requestedPage));
+    if (paged) {
+      const aligned = spreadStart(clamped, layout);
+      if (aligned !== currentPage) {
+        dispatch({ type: SET_CURRENT_PAGE, payload: aligned });
+      }
+      return;
+    }
+
     const target = pageRefs.current[clamped];
     if (target) {
       target.scrollIntoView({
@@ -79,10 +106,19 @@ function Reader({ libraryApi }) {
     if (clamped !== currentPage) {
       dispatch({ type: SET_CURRENT_PAGE, payload: clamped });
     }
-  }, [currentPage, dispatch, pageCount]);
+  }, [currentPage, dispatch, layout, pageCount, paged]);
 
-  const goNext = useCallback(() => goToPage(currentPage + 1), [currentPage, goToPage]);
-  const goPrevious = useCallback(() => goToPage(currentPage - 1), [currentPage, goToPage]);
+  const goNext = useCallback(() => goToPage(nextPage(currentPage, layout, pageCount)), [currentPage, goToPage, layout, pageCount]);
+  const goPrevious = useCallback(() => goToPage(previousPage(currentPage, layout)), [currentPage, goToPage, layout]);
+  const shownPages = useMemo(() => visiblePages(currentPage, layout, pageCount), [currentPage, layout, pageCount]);
+
+  const toggleLayout = useCallback(() => {
+    libraryApi.updateSettings?.({ readingLayout: nextLayout(layout) });
+  }, [layout, libraryApi]);
+
+  const toggleDirection = useCallback(() => {
+    libraryApi.updateSettings?.({ readingDirection: direction === 'rtl' ? 'ltr' : 'rtl' });
+  }, [direction, libraryApi]);
 
   const toggleFitMode = useCallback(() => {
     const currentIndex = fitOrder.indexOf(fitMode);
@@ -109,9 +145,40 @@ function Reader({ libraryApi }) {
       return;
     }
 
+    if (paged) {
+      // Paged layouts show the saved page directly; open on the spread that contains it.
+      resumeScrollPendingRef.current = false;
+      const aligned = spreadStart(currentPage, layout);
+      if (aligned !== currentPage) {
+        dispatch({ type: SET_CURRENT_PAGE, payload: aligned });
+      }
+      return;
+    }
+
     resumeTargetPageRef.current = currentPage;
     resumeScrollPendingRef.current = true;
   }, [currentComic?.filePath]);
+
+  // Switching layouts keeps your place: back to scroll jumps to the current page, and paged
+  // layouts snap to the spread containing it.
+  useEffect(() => {
+    if (previousLayoutRef.current === layout) {
+      return;
+    }
+    previousLayoutRef.current = layout;
+
+    if (!paged) {
+      resumeTargetPageRef.current = currentPage;
+      resumeScrollPendingRef.current = true;
+      return;
+    }
+
+    resumeScrollPendingRef.current = false;
+    const aligned = spreadStart(currentPage, layout);
+    if (aligned !== currentPage) {
+      dispatch({ type: SET_CURRENT_PAGE, payload: aligned });
+    }
+  }, [layout]);
 
   useEffect(() => {
     if (!currentComic) {
@@ -119,11 +186,11 @@ function Reader({ libraryApi }) {
     }
 
     revealChrome();
-    if (resumeScrollPendingRef.current) {
+    if (!paged && resumeScrollPendingRef.current) {
       return;
     }
-    libraryApi.queueProgressSave(currentComic.filePath, currentPage, pageCount);
-  }, [currentComic, currentPage, libraryApi, pageCount, revealChrome]);
+    libraryApiRef.current.queueProgressSave(currentComic.filePath, currentPage, pageCount);
+  }, [currentComic, currentPage, pageCount, paged, revealChrome]);
 
   useEffect(() => () => {
     window.clearTimeout(chromeTimerRef.current);
@@ -131,7 +198,7 @@ function Reader({ libraryApi }) {
 
   useEffect(() => {
     const root = scrollContainerRef.current;
-    if (!root || !pages.length) {
+    if (paged || !root || !pages.length) {
       return undefined;
     }
 
@@ -175,14 +242,14 @@ function Reader({ libraryApi }) {
     return () => {
       observer.disconnect();
     };
-  }, [currentPage, dispatch, pages.length]);
+  }, [currentPage, dispatch, pages.length, paged]);
 
   const registerPageRef = useCallback((index, node) => {
     pageRefs.current[index] = node;
   }, []);
 
   useEffect(() => {
-    if (!currentComic?.filePath || !pages.length || !resumeScrollPendingRef.current) {
+    if (paged || !currentComic?.filePath || !pages.length || !resumeScrollPendingRef.current) {
       return undefined;
     }
 
@@ -208,11 +275,15 @@ function Reader({ libraryApi }) {
       window.cancelAnimationFrame(scrollFrame);
       window.cancelAnimationFrame(releaseFrame);
     };
-  }, [currentComic?.filePath, pages.length]);
+  }, [currentComic?.filePath, pages.length, layout]);
 
+  const isMangaPaged = paged && direction === 'rtl';
   useKeyNav({
     onPrevious: goPrevious,
     onNext: goNext,
+    onArrowLeft: isMangaPaged ? goNext : goPrevious,
+    onArrowRight: isMangaPaged ? goPrevious : goNext,
+    onToggleLayout: toggleLayout,
     onBack: backToLibrary,
     onToggleFit: toggleFitMode,
     onFullscreen: libraryApi.toggleFullscreen,
@@ -244,11 +315,14 @@ function Reader({ libraryApi }) {
       <Toolbar
         visible={toolbarVisible}
         title={currentComic.title}
-        currentPage={currentPage}
-        pageCount={pageCount}
+        pageLabel={pageLabel(currentPage, layout, pageCount)}
         fitMode={fitMode}
+        layout={layout}
+        direction={direction}
         onBack={backToLibrary}
         onToggleFit={toggleFitMode}
+        onToggleLayout={toggleLayout}
+        onToggleDirection={toggleDirection}
         onToggleFullscreen={libraryApi.toggleFullscreen}
         onToggleThumbnails={() => dispatch({ type: TOGGLE_THUMBNAILS })}
       />
@@ -258,7 +332,7 @@ function Reader({ libraryApi }) {
           {fitMode === 'fit-width' ? 'Width Lock' : fitMode === 'fit-height' ? 'Height Lock' : 'Original Scan'}
         </div>
         <div className="pointer-events-auto border border-white/8 bg-black/55 px-3 py-2 font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.18em] text-secondary backdrop-blur-xl">
-          {currentPage + 1} / {pageCount}
+          {pageLabel(currentPage, layout, pageCount)}
         </div>
       </div>
 
@@ -269,45 +343,59 @@ function Reader({ libraryApi }) {
         <ThumbnailStrip
           pages={pages}
           currentPage={currentPage}
+          activePages={paged ? shownPages : undefined}
           open={sidebarOpen}
           onSelect={(page) => goToPage(page)}
         />
 
-        <div
-          ref={scrollContainerRef}
-          className="relative min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-black px-6 py-20"
-        >
-          <button
-            type="button"
-            onClick={goPrevious}
-            className="reader-click-zone reader-click-zone-left"
-            aria-label="Previous page"
+        {paged ? (
+          <PagedView
+            pages={pages}
+            shown={shownPages}
+            layout={layout}
+            direction={direction}
+            fitMode={fitMode}
+            onPrevious={goPrevious}
+            onNext={goNext}
+            onRevealChrome={revealChrome}
           />
-          <button
-            type="button"
-            onClick={revealChrome}
-            className="reader-click-zone reader-click-zone-center"
-            aria-label="Show controls"
-          />
-          <button
-            type="button"
-            onClick={goNext}
-            className="reader-click-zone reader-click-zone-right"
-            aria-label="Next page"
-          />
+        ) : (
+          <div
+            ref={scrollContainerRef}
+            className="relative min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-black px-6 py-20"
+          >
+            <button
+              type="button"
+              onClick={goPrevious}
+              className="reader-click-zone reader-click-zone-left"
+              aria-label="Previous page"
+            />
+            <button
+              type="button"
+              onClick={revealChrome}
+              className="reader-click-zone reader-click-zone-center"
+              aria-label="Show controls"
+            />
+            <button
+              type="button"
+              onClick={goNext}
+              className="reader-click-zone reader-click-zone-right"
+              aria-label="Next page"
+            />
 
-          <div className="mx-auto flex max-w-[1680px] flex-col">
-            {pages.map((page, index) => (
-              <ReaderPage
-                key={`${page}-${index}`}
-                page={page}
-                index={index}
-                fitClassName={fitClassName}
-                registerPageRef={registerPageRef}
-              />
-            ))}
+            <div className="mx-auto flex max-w-[1680px] flex-col">
+              {pages.map((page, index) => (
+                <ReaderPage
+                  key={`${page}-${index}`}
+                  page={page}
+                  index={index}
+                  fitClassName={fitClassName}
+                  registerPageRef={registerPageRef}
+                />
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

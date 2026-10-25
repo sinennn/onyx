@@ -27,15 +27,30 @@ export function useKeyNav(handlers, enabled = true) {
       }
 
       switch (event.key) {
+        // Arrow keys follow the page on screen (they swap in right-to-left reading);
+        // Space and Backspace always move forward and back through the book.
         case 'ArrowLeft':
+          event.preventDefault();
+          (handlers.onArrowLeft || handlers.onPrevious)?.();
+          break;
         case 'Backspace':
           event.preventDefault();
           handlers.onPrevious?.();
           break;
         case 'ArrowRight':
+          event.preventDefault();
+          (handlers.onArrowRight || handlers.onNext)?.();
+          break;
         case ' ':
           event.preventDefault();
           handlers.onNext?.();
+          break;
+        case 'l':
+        case 'L':
+          if (handlers.onToggleLayout) {
+            event.preventDefault();
+            handlers.onToggleLayout();
+          }
           break;
         case 'Escape':
           event.preventDefault();
