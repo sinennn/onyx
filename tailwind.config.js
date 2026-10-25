@@ -25,9 +25,14 @@ module.exports = {
       },
       animation: {
         pulseSoft: 'pulseSoft 1.2s ease-in-out infinite',
+        fadeIn: 'fadeIn 160ms ease-out both',
         modalRise: 'modalRise 200ms cubic-bezier(0.16, 1, 0.3, 1)',
       },
       keyframes: {
+        fadeIn: {
+          from: { opacity: 0 },
+          to: { opacity: 1 },
+        },
         pulseSoft: {
           '0%, 100%': { opacity: 0.55 },
           '50%': { opacity: 1 },

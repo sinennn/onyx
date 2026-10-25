@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { useIntersection } from '../hooks/useIntersection';
 import { useDominantColor } from '../hooks/useDominantColor';
 
-function CoverCard({ comic, onOpen, onContextMenu, showProgress, index = 0 }) {
+function CoverCard({ comic, onOpen, onContextMenu, showProgress, isOpening = false, index = 0 }) {
   const cardRef = useRef(null);
   const isVisible = useIntersection(cardRef);
   const [isHovering, setIsHovering] = useState(false);
@@ -18,6 +18,7 @@ function CoverCard({ comic, onOpen, onContextMenu, showProgress, index = 0 }) {
       type="button"
       onClick={() => onOpen(comic)}
       onContextMenu={(event) => onContextMenu?.(event, comic)}
+      aria-busy={isOpening}
       onMouseEnter={() => {
         setIsHovering(true);
         primeColor();
@@ -50,6 +51,12 @@ function CoverCard({ comic, onOpen, onContextMenu, showProgress, index = 0 }) {
             </div>
           )}
         </div>
+        {isOpening ? (
+          <div className="absolute inset-0 flex animate-fadeIn flex-col items-center justify-center gap-3 bg-black/60">
+            <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/15 border-t-accent" />
+            <span className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.2em] text-primary">Opening</span>
+          </div>
+        ) : null}
         {showProgress && comic.progress > 0 ? (
           <div className="absolute inset-x-0 bottom-0 h-px bg-white/8">
             <div className="h-full bg-accent" style={{ width: progressWidth }} />

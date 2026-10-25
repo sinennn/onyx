@@ -2,12 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 import CoverCard from '../components/CoverCard';
 import ContextMenu from '../components/ContextMenu';
 import DropZone from '../components/DropZone';
-import { useLibraryContext } from '../context/AppContext';
+import { useLibraryContext, useReaderContext } from '../context/AppContext';
+import { useDelayedValue } from '../hooks/useDelayedValue';
 import { useDominantColor } from '../hooks/useDominantColor';
 import { getDesktopApi } from '../platform/desktopApi';
 
 function Library({ libraryApi }) {
   const { library, settings } = useLibraryContext();
+  const { openingFilePath } = useReaderContext();
+  // Only show the opening state if unpacking takes long enough to notice.
+  const visibleOpeningPath = useDelayedValue(openingFilePath, 150);
   const [contextMenu, setContextMenu] = useState(null);
   const [dragActive, setDragActive] = useState(false);
 
@@ -94,6 +98,7 @@ function Library({ libraryApi }) {
               <button
                 type="button"
                 onClick={() => libraryApi.openComic(heroComic)}
+                aria-busy={visibleOpeningPath === heroComic.filePath}
                 onContextMenu={(event) => {
                   event.preventDefault();
                   setContextMenu({
@@ -146,8 +151,8 @@ function Library({ libraryApi }) {
 
                   <div className="max-w-[760px]">
                     <div className="mb-4 flex flex-wrap items-center gap-3">
-                      <span className="border border-accent bg-accent px-4 py-2 font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.22em] text-white">
-                        Resume
+                      <span className={`border border-accent bg-accent px-4 py-2 font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.22em] text-white ${visibleOpeningPath === heroComic.filePath ? 'animate-pulseSoft' : ''}`}>
+                        {visibleOpeningPath === heroComic.filePath ? 'Opening…' : 'Resume'}
                       </span>
                       <span className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.2em] text-secondary">
                         {heroComic.pageCount ? `Page ${heroPage} / ${heroComic.pageCount}` : 'Ready to open'}
@@ -203,6 +208,7 @@ function Library({ libraryApi }) {
                       });
                     }}
                     showProgress={settings.showProgressBars}
+                    isOpening={visibleOpeningPath === comic.filePath}
                   />
                 ))}
               </div>

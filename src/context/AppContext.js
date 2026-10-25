@@ -40,6 +40,7 @@ const initialReaderState = {
   sidebarOpen: true,
   toolbarVisible: true,
   isLoading: false,
+  openingFilePath: '',
 };
 
 function libraryReducer(state, action) {
@@ -140,7 +141,8 @@ function readerReducer(state, action) {
     case SET_READER_LOADING:
       return {
         ...state,
-        isLoading: action.payload,
+        isLoading: Boolean(action.payload),
+        openingFilePath: typeof action.payload === 'string' ? action.payload : '',
       };
     default:
       return state;
