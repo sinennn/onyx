@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useMemo, useReducer } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useReducer } from 'react';
 import {
   CLOSE_COMIC,
   DISMISS_TOAST,
@@ -100,6 +100,9 @@ function libraryReducer(state, action) {
 function readerReducer(state, action) {
   switch (action.type) {
     case SET_VIEW:
+      if (state.view === action.payload) {
+        return state;
+      }
       return {
         ...state,
         view: action.payload,
@@ -122,11 +125,17 @@ function readerReducer(state, action) {
         toolbarVisible: true,
       };
     case SET_CURRENT_PAGE:
+      if (state.currentPage === action.payload) {
+        return state;
+      }
       return {
         ...state,
         currentPage: action.payload,
       };
     case SET_FIT_MODE:
+      if (state.fitMode === action.payload) {
+        return state;
+      }
       return {
         ...state,
         fitMode: action.payload,
@@ -137,11 +146,17 @@ function readerReducer(state, action) {
         sidebarOpen: typeof action.payload === 'boolean' ? action.payload : !state.sidebarOpen,
       };
     case SET_TOOLBAR_VISIBILITY:
+      if (state.toolbarVisible === action.payload) {
+        return state;
+      }
       return {
         ...state,
         toolbarVisible: action.payload,
       };
     case SET_READER_LOADING:
+      if (state.isLoading === Boolean(action.payload) && state.openingFilePath === (typeof action.payload === 'string' ? action.payload : '')) {
+        return state;
+      }
       return {
         ...state,
         isLoading: Boolean(action.payload),
@@ -166,26 +181,28 @@ export function AppProvider({ children }) {
   const [libraryState, libraryDispatch] = useReducer(libraryReducer, initialLibraryState);
   const [readerState, readerDispatch] = useReducer(readerReducer, initialReaderState);
 
-  const dispatch = (action) => {
+  // Stable across renders: callbacks and effects that depend on dispatch must not re-run just
+  // because some unrelated state changed.
+  const dispatch = useCallback((action) => {
     if (libraryActionTypes.has(action.type)) {
       libraryDispatch(action);
       return;
     }
 
     readerDispatch(action);
-  };
+  }, []);
 
   const libraryValue = useMemo(() => ({
     ...libraryState,
     dispatch,
     libraryDispatch,
-  }), [libraryState]);
+  }), [dispatch, libraryState]);
 
   const readerValue = useMemo(() => ({
     ...readerState,
     dispatch,
     readerDispatch,
-  }), [readerState]);
+  }), [dispatch, readerState]);
 
   return (
     <LibraryContext.Provider value={libraryValue}>
