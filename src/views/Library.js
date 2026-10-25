@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import CoverCard from '../components/CoverCard';
 import ContextMenu from '../components/ContextMenu';
 import DropZone from '../components/DropZone';
 import { useLibraryContext, useReaderContext } from '../context/AppContext';
 import { useDelayedValue } from '../hooks/useDelayedValue';
 import { useDominantColor } from '../hooks/useDominantColor';
+import { filterLibrary, isInProgress, LIBRARY_SORTS, pickHeroComic, sortLibrary } from '../library/shelf';
 import { getDesktopApi } from '../platform/desktopApi';
 
 function Library({ libraryApi }) {
@@ -14,19 +15,16 @@ function Library({ libraryApi }) {
   const visibleOpeningPath = useDelayedValue(openingFilePath, 150);
   const [contextMenu, setContextMenu] = useState(null);
   const [dragActive, setDragActive] = useState(false);
+  const [query, setQuery] = useState('');
+  const searchRef = useRef(null);
+  const librarySort = settings.librarySort || 'recent';
 
-  const sortedLibrary = useMemo(() => (
-    [...library].sort((left, right) => {
-      const leftTime = left.lastOpened ? new Date(left.lastOpened).getTime() : 0;
-      const rightTime = right.lastOpened ? new Date(right.lastOpened).getTime() : 0;
-      return rightTime - leftTime || left.title.localeCompare(right.title);
-    })
-  ), [library]);
+  const shelf = useMemo(() => (
+    filterLibrary(sortLibrary(library, librarySort), query)
+  ), [library, librarySort, query]);
 
-  const continueReading = useMemo(() => (
-    sortedLibrary.filter((comic) => comic.progress > 0)
-  ), [sortedLibrary]);
-  const heroComic = continueReading[0] || sortedLibrary[0] || null;
+  const continueReading = useMemo(() => library.filter(isInProgress), [library]);
+  const heroComic = useMemo(() => pickHeroComic(library), [library]);
   const heroPage = heroComic?.pageCount
     ? Math.min((heroComic.progress || 0) + 1, heroComic.pageCount)
     : null;
@@ -44,6 +42,18 @@ function Library({ libraryApi }) {
     ? `${Math.min(100, ((heroComic.progress || 0) / heroComic.pageCount) * 100)}%`
     : '0%';
   const { glowColor, primeColor } = useDominantColor(heroComic?.coverURL);
+
+  useEffect(() => {
+    const focusSearch = (event) => {
+      if (event.metaKey && event.key.toLowerCase() === 'f' && !event.shiftKey) {
+        event.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      }
+    };
+    window.addEventListener('keydown', focusSearch);
+    return () => window.removeEventListener('keydown', focusSearch);
+  }, []);
 
   useEffect(() => {
     try {
@@ -81,7 +91,7 @@ function Library({ libraryApi }) {
             <div className="flex items-center gap-4">
               <div className="text-right">
                 <p className="label-caps text-muted">Collection</p>
-                <p className="font-['JetBrains_Mono'] text-[11px] uppercase tracking-[0.18em] text-secondary">{sortedLibrary.length} books</p>
+                <p className="font-['JetBrains_Mono'] text-[11px] uppercase tracking-[0.18em] text-secondary">{library.length} books</p>
               </div>
               <button
                 type="button"
@@ -188,12 +198,39 @@ function Library({ libraryApi }) {
                 <p className="label-caps text-muted">Library Items</p>
                 <h3 className="display-title mt-2 text-[36px] leading-none text-primary">Shelf</h3>
               </div>
-              <p className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.2em] text-secondary">{sortedLibrary.length} covers</p>
+              <div className="flex items-center gap-3">
+                <input
+                  ref={searchRef}
+                  type="search"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      setQuery('');
+                      event.currentTarget.blur();
+                    }
+                  }}
+                  placeholder="Search"
+                  aria-label="Search library"
+                  className="h-9 w-56 border border-white/8 bg-black/30 px-3 font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.18em] text-primary outline-none transition-colors duration-150 placeholder:text-muted focus:border-accent/60"
+                />
+                <select
+                  value={librarySort}
+                  onChange={(event) => libraryApi.updateSettings({ librarySort: event.target.value })}
+                  aria-label="Sort library"
+                  className="h-9 border border-white/8 bg-black/30 px-3 font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.18em] text-secondary outline-none transition-colors duration-150 focus:border-accent/60"
+                >
+                  {LIBRARY_SORTS.map((sort) => <option key={sort.id} value={sort.id}>{sort.label}</option>)}
+                </select>
+                <p className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.2em] text-secondary">
+                  {query.trim() ? `${shelf.length} of ${library.length}` : `${library.length} covers`}
+                </p>
+              </div>
             </div>
 
-            {sortedLibrary.length ? (
+            {shelf.length ? (
               <div className="cover-grid">
-                {sortedLibrary.map((comic, index) => (
+                {shelf.map((comic, index) => (
                   <CoverCard
                     key={comic.filePath}
                     comic={comic}
@@ -215,10 +252,21 @@ function Library({ libraryApi }) {
             ) : (
               <div className="flex h-[240px] items-center justify-center border border-dashed border-white/10 bg-[#0f0f11]">
                 <div className="max-w-md px-6 text-center">
-                  <h3 className="display-title text-[44px] leading-none text-primary">No Issues Shelved</h3>
-                  <p className="mt-4 text-sm leading-7 text-secondary">
-                    Drop CBZ or CBR files into the window and the archive will start to take shape.
-                  </p>
+                  {library.length ? (
+                    <>
+                      <h3 className="display-title text-[44px] leading-none text-primary">No Matches</h3>
+                      <p className="mt-4 text-sm leading-7 text-secondary">
+                        Nothing on the shelf matches “{query.trim()}”.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <h3 className="display-title text-[44px] leading-none text-primary">No Issues Shelved</h3>
+                      <p className="mt-4 text-sm leading-7 text-secondary">
+                        Drop comics or whole folders into the window and the archive will start to take shape.
+                      </p>
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -231,6 +279,14 @@ function Library({ libraryApi }) {
         onRead={(comic) => {
           setContextMenu(null);
           libraryApi.openComic(comic);
+        }}
+        onMarkRead={(comic) => {
+          setContextMenu(null);
+          libraryApi.setComicProgress(comic.filePath, Math.max(0, comic.pageCount - 1));
+        }}
+        onMarkUnread={(comic) => {
+          setContextMenu(null);
+          libraryApi.setComicProgress(comic.filePath, 0);
         }}
         onRemove={async (comic) => {
           setContextMenu(null);

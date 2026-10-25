@@ -1,6 +1,7 @@
 import { SET_VIEW } from '../context/actions';
 import { useReaderContext } from '../context/AppContext';
 import AddIcon from './icons/AddIcon';
+import FolderIcon from './icons/FolderIcon';
 import LibraryIcon from './icons/LibraryIcon';
 import SettingsIcon from './icons/SettingsIcon';
 import appIcon from '../../buildResources/icon.png';
@@ -10,7 +11,7 @@ const navItems = [
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
 ];
 
-function Sidebar({ onImport }) {
+function Sidebar({ onImport, onImportFolder }) {
   const { view, dispatch } = useReaderContext();
 
   return (
@@ -51,6 +52,17 @@ function Sidebar({ onImport }) {
       >
         <AddIcon className="h-4 w-4 shrink-0" />
       </button>
+
+      {onImportFolder ? (
+        <button
+          type="button"
+          title="Import Folder"
+          onClick={onImportFolder}
+          className="mt-2 flex h-10 w-10 items-center justify-center border border-accent/50 text-accent transition-colors duration-150 hover:border-accent hover:bg-accent/10"
+        >
+          <FolderIcon className="h-4 w-4 shrink-0" />
+        </button>
+      ) : null}
 
       <div className="mt-auto flex flex-col items-center gap-3">
         <button

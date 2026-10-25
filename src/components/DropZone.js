@@ -9,7 +9,7 @@ function DropZone({ active }) {
         </div>
         <h3 className="mt-6 text-2xl font-semibold text-primary">Drop your comics to import</h3>
         <p className="mt-3 text-sm leading-7 text-secondary">
-          Panel watches for CBZ and CBR archives dropped anywhere in the window and adds them to your shelf.
+          Drop CBZ, CBR or CB7 comics, or whole folders of them, anywhere in the window and Onyx adds them to your shelf.
         </p>
       </div>
     </div>

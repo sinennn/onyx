@@ -181,8 +181,21 @@ export function useLibrary() {
   }, [enqueueToast, patchComic, renderThumbnail]);
 
   const ingestFiles = useCallback(async (filePaths) => {
-    const uniquePaths = [...new Set(filePaths)].filter(Boolean);
+    const requested = [...new Set(filePaths)].filter(Boolean);
+    if (!requested.length) {
+      return;
+    }
+
+    // Folders become the comics inside them; anything that isn't a comic is dropped.
+    let uniquePaths;
+    try {
+      uniquePaths = await getComicAPI().expandComicPaths(requested);
+    } catch (error) {
+      enqueueToast(error.message || 'Unable to read those files.', 'error');
+      return;
+    }
     if (!uniquePaths.length) {
+      enqueueToast('No CBZ, CBR or CB7 comics were found there.', 'error');
       return;
     }
 
@@ -514,6 +527,21 @@ export function useLibrary() {
     };
   }, [enqueueToast, generateCoverThumbnail, libraryState.library]);
 
+  const pickFolder = useCallback(async () => {
+    try {
+      const folders = await getComicAPI().openFolderPicker();
+      if (folders?.length) {
+        await ingestFiles(folders);
+      }
+    } catch (error) {
+      enqueueToast(error.message || 'Unable to open the folder picker.', 'error');
+    }
+  }, [enqueueToast, ingestFiles]);
+
+  const setComicProgress = useCallback((filePath, progress) => (
+    patchComic({ filePath, progress })
+  ), [patchComic]);
+
   const pickFiles = useCallback(async () => {
     try {
       const filePaths = await getComicAPI().openFilePicker();
@@ -566,6 +594,8 @@ export function useLibrary() {
     currentComic: readerState.currentComic,
     currentPage: readerState.currentPage,
     pickFiles,
+    pickFolder,
+    setComicProgress,
     openComic,
     closeComic,
     queueProgressSave,
