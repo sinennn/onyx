@@ -92,7 +92,6 @@ function createTauriApi() {
     onAppFocusChange: (callback) => subscribe((isActive) => currentWindow.onFocusChanged(({ payload }) => {
       if (isActive()) callback(payload);
     })),
-    onLibraryChanged: (callback) => listenTo(TAURI_EVENTS.libraryChanged, callback),
     onSettingsChanged: (callback) => listenTo(TAURI_EVENTS.settingsChanged, callback),
     onUpdateStatus: (callback) => {
       const unsubscribe = listenTo(TAURI_EVENTS.updateStatus, callback);

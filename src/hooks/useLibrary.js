@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   CLOSE_COMIC,
-  DISMISS_TOAST,
   ENQUEUE_TOAST,
   OPEN_COMIC,
   REMOVE_COMIC,
   SET_APP_VERSION,
   SET_LIBRARY,
   SET_READER_LOADING,
-  SET_VIEW,
   UPDATE_COMIC,
   UPDATE_SETTINGS,
 } from '../context/actions';
@@ -324,10 +322,6 @@ export function useLibrary() {
     }
   }, [enqueueToast, libraryState.dispatch]);
 
-  const setView = useCallback((view) => {
-    readerState.dispatch({ type: SET_VIEW, payload: view });
-  }, [readerState.dispatch]);
-
   const updateSettings = useCallback((patch) => {
     const nextSettings = {
       ...libraryState.settings,
@@ -387,11 +381,6 @@ export function useLibrary() {
       });
     });
 
-    const unsubscribeLibraryChanges = comicAPI.onLibraryChanged((nextLibrary) => {
-      libraryState.dispatch({ type: SET_LIBRARY, payload: nextLibrary });
-      libraryRef.current = nextLibrary;
-    });
-
     const unsubscribeSettingsChanges = comicAPI.onSettingsChanged((nextSettings) => {
       libraryState.dispatch({ type: UPDATE_SETTINGS, payload: nextSettings });
     });
@@ -426,7 +415,6 @@ export function useLibrary() {
       unsubscribeBoot?.();
       unsubscribeDrops?.();
       unsubscribeFocus?.();
-      unsubscribeLibraryChanges?.();
       unsubscribeSettingsChanges?.();
       unsubscribeUpdateStatus?.();
       window.clearTimeout(progressRef.current.timer);
@@ -516,10 +504,6 @@ export function useLibrary() {
     };
   }, [enqueueToast, generateCoverThumbnail, libraryState.library]);
 
-  const dismissToast = useCallback((toastId) => {
-    libraryState.dispatch({ type: DISMISS_TOAST, payload: toastId });
-  }, [libraryState.dispatch]);
-
   const pickFiles = useCallback(async () => {
     try {
       const filePaths = await getComicAPI().openFilePicker();
@@ -576,10 +560,8 @@ export function useLibrary() {
     closeComic,
     queueProgressSave,
     removeComic,
-    setView,
     updateSettings,
     syncLibrary,
-    dismissToast,
     toggleFullscreen,
     checkForUpdates,
     installUpdate,

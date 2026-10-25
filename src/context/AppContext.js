@@ -206,14 +206,3 @@ export function useReaderContext() {
   }
   return context;
 }
-
-export function useAppContext() {
-  const library = useLibraryContext();
-  const reader = useReaderContext();
-
-  return {
-    ...library,
-    ...reader,
-    dispatch: library.dispatch,
-  };
-}
