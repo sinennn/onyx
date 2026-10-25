@@ -65,7 +65,7 @@ fn title_from_path(path: &str) -> String {
     title.trim().to_string()
 }
 
-// Mirrors Intl.Collator({ numeric: true, sensitivity: 'base' }) so "page2" sorts before "page10".
+
 fn natural_cmp(left: &str, right: &str) -> Ordering {
     let (mut left, mut right) = (left.chars().peekable(), right.chars().peekable());
     loop {

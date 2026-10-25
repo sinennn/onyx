@@ -22,7 +22,6 @@ export const TAURI_COMMANDS = Object.freeze({
 export const TAURI_EVENTS = Object.freeze({
   filesDropped: 'files_dropped',
   appFocusChange: 'app_focus_change',
-  libraryChanged: 'library_changed',
   settingsChanged: 'settings_changed',
   updateStatus: 'update_status',
 });

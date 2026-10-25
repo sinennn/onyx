@@ -29,7 +29,7 @@ describe('Tauri contract', () => {
     expect(TAURI_COMMANDS.getBootPayload).toBe('get_boot_payload');
     expect(TAURI_COMMANDS.getUpdateStatus).toBe('get_update_status');
     expect(TAURI_EVENTS.filesDropped).toBe('files_dropped');
-    expect(TAURI_EVENTS.libraryChanged).toBe('library_changed');
+    expect(TAURI_EVENTS.settingsChanged).toBe('settings_changed');
   });
 });
 
@@ -93,7 +93,7 @@ describe('desktop API', () => {
     const api = (await loadApi())();
 
     [
-      'rendererReady', 'onLibraryBoot', 'onFilesDropped', 'onAppFocusChange', 'onLibraryChanged',
+      'rendererReady', 'onLibraryBoot', 'onFilesDropped', 'onAppFocusChange',
       'onSettingsChanged', 'onUpdateStatus', 'onDragStateChange', 'getLibrary', 'getSettings', 'getAppInfo',
       'openFilePicker', 'cancelExtraction', 'removeFromLibrary', 'toggleFullscreen', 'checkForUpdates', 'installUpdate',
     ].forEach((method) => expect(typeof api[method]).toBe('function'));
