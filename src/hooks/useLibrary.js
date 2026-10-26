@@ -224,15 +224,25 @@ export function useLibrary() {
   }, [ingestFiles]);
 
   const openComic = useCallback(async (comic) => {
-    if (pendingExtractionRef.current && pendingExtractionRef.current !== comic.filePath) {
+    // Repeat clicks on the comic that is already opening would restart the work.
+    if (pendingExtractionRef.current === comic.filePath) {
+      return;
+    }
+
+    if (pendingExtractionRef.current) {
       getComicAPI().cancelExtraction(pendingExtractionRef.current);
     }
 
     pendingExtractionRef.current = comic.filePath;
-    readerState.dispatch({ type: SET_READER_LOADING, payload: true });
+    readerState.dispatch({ type: SET_READER_LOADING, payload: comic.filePath });
 
     try {
       const extracted = await getComicAPI().extractComic(comic.filePath);
+      // Another comic was picked while this one was unpacking.
+      if (pendingExtractionRef.current !== comic.filePath) {
+        return;
+      }
+
       const settings = settingsRef.current;
       const startPage = settings.rememberReadingPosition
         ? Math.min(comic.progress || 0, Math.max(0, extracted.pageCount - 1))
@@ -268,8 +278,8 @@ export function useLibrary() {
     } finally {
       if (pendingExtractionRef.current === comic.filePath) {
         pendingExtractionRef.current = '';
+        readerState.dispatch({ type: SET_READER_LOADING, payload: false });
       }
-      readerState.dispatch({ type: SET_READER_LOADING, payload: false });
     }
   }, [enqueueToast, generateCoverThumbnail, patchComic, readerState.dispatch]);
 
