@@ -64,13 +64,15 @@ Library data is stored in `~/Library/Application Support/com.sinennn.onyx/onyx-l
 
 Onyx updates itself from GitHub Releases using [`tauri-plugin-updater`](https://v2.tauri.app/plugin/updater/). Packaged builds check for updates on launch, download them in the background, and install either from Settings or automatically on quit. Debug builds report that auto-updates are only available in packaged builds.
 
-Publish a release with:
+Ship an update with one command, from an up-to-date `main`:
 
 ```bash
-npm run release -- --notes "What changed"
+make release                       # 1.0.0 -> 1.0.1
+make release BUMP=minor            # 1.0.0 -> 1.1.0
+make release NOTES="What changed"  # custom notes (default: generated from merged PRs)
 ```
 
-Set the new version in `package.json` first (it is the single source of the app version). The script builds a universal (Intel + Apple Silicon) bundle, signs the update archive, writes `latest.json`, and creates the `v<version>` GitHub release with `gh`. Add `--dry-run` to build everything without publishing.
+It checks that you're on a clean `main` in sync with GitHub, bumps the version in `package.json`, commits and pushes that, then builds a universal (Intel + Apple Silicon) bundle, signs the update archive, writes `latest.json` and creates the `v<version>` GitHub release. Installed copies of Onyx pick it up on their next launch. If the build fails after the bump, fix the problem and run `make publish` to retry without bumping again. `make check` runs only the pre-flight checks, and `npm run release -- --dry-run` builds everything without publishing.
 
 Requirements:
 

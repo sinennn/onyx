@@ -42,6 +42,19 @@ function signingEnv() {
   };
 }
 
+// Fail before the long build if this version was already published.
+if (!dryRun) {
+  let exists = true;
+  try {
+    execFileSync('gh', ['release', 'view', tag, '--repo', `${owner}/${repo}`], { stdio: 'ignore' });
+  } catch {
+    exists = false;
+  }
+  if (exists) {
+    throw new Error(`Release ${tag} already exists. Bump the version in package.json first.`);
+  }
+}
+
 const env = { ...process.env, ...signingEnv() };
 run('npx', ['tauri', 'build', '--target', target, '--config', JSON.stringify({ bundle: { createUpdaterArtifacts: true } })], { env });
 
@@ -75,5 +88,8 @@ if (dryRun) {
   console.log(`[release] dry run: ${tag} for ${owner}/${repo} is ready but was not published.`);
   assets.forEach((asset) => console.log(`  ${path.relative(rootDir, asset)}`));
 } else {
-  run('gh', ['release', 'create', tag, ...assets, '--repo', `${owner}/${repo}`, '--title', `${productName} ${version}`, '--notes', notes || `${productName} ${version}`]);
+  // Tag the exact commit that was built, and let GitHub write notes from merged PRs when none are given.
+  const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: rootDir }).toString().trim();
+  const notesArgs = notes ? ['--notes', notes] : ['--generate-notes'];
+  run('gh', ['release', 'create', tag, ...assets, '--repo', `${owner}/${repo}`, '--target', commit, '--title', `${productName} ${version}`, ...notesArgs]);
 }
