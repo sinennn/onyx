@@ -214,14 +214,28 @@ function Library({ libraryApi }) {
                   aria-label="Search library"
                   className="h-9 w-56 border border-white/8 bg-black/30 px-3 font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.18em] text-primary outline-none transition-colors duration-150 placeholder:text-muted focus:border-accent/60"
                 />
-                <select
-                  value={librarySort}
-                  onChange={(event) => libraryApi.updateSettings({ librarySort: event.target.value })}
-                  aria-label="Sort library"
-                  className="h-9 border border-white/8 bg-black/30 px-3 font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.18em] text-secondary outline-none transition-colors duration-150 focus:border-accent/60"
-                >
-                  {LIBRARY_SORTS.map((sort) => <option key={sort.id} value={sort.id}>{sort.label}</option>)}
-                </select>
+                <div className="relative">
+                  <select
+                    value={librarySort}
+                    onChange={(event) => libraryApi.updateSettings({ librarySort: event.target.value })}
+                    aria-label="Sort library"
+                    className="h-9 appearance-none rounded-none border border-white/8 bg-transparent pl-3 pr-8 font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.18em] text-secondary outline-none transition-colors duration-150 hover:border-white/16 focus:border-accent/60"
+                  >
+                    {LIBRARY_SORTS.map((sort) => <option key={sort.id} value={sort.id}>{sort.label}</option>)}
+                  </select>
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                    className="pointer-events-none absolute right-3 top-1/2 h-3 w-3 -translate-y-1/2 text-muted"
+                  >
+                    <path d="M6 9l6 6 6-6" />
+                  </svg>
+                </div>
                 <p className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.2em] text-secondary">
                   {query.trim() ? `${shelf.length} of ${library.length}` : `${library.length} covers`}
                 </p>
