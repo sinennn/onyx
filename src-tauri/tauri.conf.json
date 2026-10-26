@@ -34,7 +34,8 @@
       "assetProtocol": {
         "enable": true,
         "scope": [
-          "$TEMP/onyx-cache/**"
+          "$TEMP/onyx-cache/**",
+          "$APPCACHE/pages/**"
         ]
       }
     }
@@ -58,6 +59,7 @@
         "ext": [
           "cbz",
           "cbr",
+          "cb7",
           "zip",
           "rar"
         ],

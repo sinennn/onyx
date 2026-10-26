@@ -6,15 +6,23 @@ use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::Arc;
 
 use rfd::FileDialog;
+use sevenz_rust2::{Archive as SevenZipArchive, ArchiveReader as SevenZipReader, Password};
 use tauri::{AppHandle, Emitter, Manager, State};
 use unrar::Archive as RarArchive;
 use zip::ZipArchive;
 
+use super::page_cache::{self, CachedComic};
 use super::{BackendState, ComicInspection, ExtractionResult, LibraryEntry, Settings, SETTINGS_CHANGED};
 
 const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "bmp", "tif", "tiff", "avif"];
 const STORE_FILE: &str = "onyx-library.json";
-const CACHE_DIR: &str = "onyx-cache";
+const ARCHIVE_EXTENSIONS: &[&str] = &["cbz", "zip", "cbr", "rar", "cb7", "7z"];
+// Cover previews live in the temp folder and are cleared on quit; full extractions live in the
+// app's cache folder and are kept for the most recently read comics.
+const PREVIEW_DIR: &str = "onyx-cache";
+const PAGES_DIR: &str = "pages";
+// Up to this many pages are read individually from a non-solid 7-Zip archive (see extract_seven_zip).
+const DIRECT_READ_LIMIT: usize = 8;
 const NO_PAGES: &str = "No readable pages were found in this archive.";
 const CANCELLED: &str = "Extraction cancelled";
 
@@ -27,13 +35,14 @@ fn is_image(path: &str) -> bool {
 }
 
 pub fn is_comic_path(path: &str) -> bool {
-    matches!(extension(path).as_str(), "cbz" | "zip" | "cbr" | "rar")
+    ARCHIVE_EXTENSIONS.contains(&extension(path).as_str())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ArchiveKind {
     Zip,
     Rar,
+    SevenZip,
 }
 
 const RAR_SIGNATURE: &[u8] = b"Rar!\x1a\x07";
@@ -47,9 +56,13 @@ fn archive_kind(path: &str) -> Result<ArchiveKind, String> {
     fs::File::open(path).and_then(|file| file.take(8).read_to_end(&mut header)).map_err(|error| error.to_string())?;
     if header.starts_with(RAR_SIGNATURE) { return Ok(ArchiveKind::Rar); }
     if ZIP_SIGNATURES.iter().any(|signature| header.starts_with(signature)) { return Ok(ArchiveKind::Zip); }
-    if header.starts_with(SEVEN_ZIP_SIGNATURE) { return Err("This comic is a 7-Zip (CB7) archive, which Onyx can't open yet.".into()); }
+    if header.starts_with(SEVEN_ZIP_SIGNATURE) { return Ok(ArchiveKind::SevenZip); }
     // No known signature at the start (e.g. a self-extracting RAR): fall back to the extension.
-    Ok(if matches!(extension(path).as_str(), "cbr" | "rar") { ArchiveKind::Rar } else { ArchiveKind::Zip })
+    Ok(match extension(path).as_str() {
+        "cbr" | "rar" => ArchiveKind::Rar,
+        "cb7" | "7z" => ArchiveKind::SevenZip,
+        _ => ArchiveKind::Zip,
+    })
 }
 
 fn title_from_path(path: &str) -> String {
@@ -100,8 +113,12 @@ fn sort_natural(names: &mut [String]) {
     names.sort_by(|left, right| natural_cmp(left, right));
 }
 
-fn cache_root(app: &AppHandle) -> Result<PathBuf, String> {
-    Ok(app.path().temp_dir().map_err(|error| error.to_string())?.join(CACHE_DIR))
+fn preview_root(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(app.path().temp_dir().map_err(|error| error.to_string())?.join(PREVIEW_DIR))
+}
+
+fn pages_root(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(app.path().app_cache_dir().map_err(|error| error.to_string())?.join(PAGES_DIR))
 }
 
 fn cache_directory(app: &AppHandle, file_path: &str, preview: bool) -> Result<PathBuf, String> {
@@ -110,7 +127,7 @@ fn cache_directory(app: &AppHandle, file_path: &str, preview: bool) -> Result<Pa
         .take(48).collect::<String>();
     let hash = file_path.bytes().fold(2166136261u64, |hash, byte| (hash ^ byte as u64).wrapping_mul(16777619));
     let suffix = if preview { "-preview" } else { "" };
-    let root = cache_root(app)?;
+    let root = if preview { preview_root(app)? } else { pages_root(app)? };
     fs::create_dir_all(&root).map_err(|error| error.to_string())?;
     Ok(root.join(format!("{stem}-{hash:016x}{suffix}")))
 }
@@ -120,14 +137,44 @@ fn reset_directory(directory: &Path) -> Result<(), String> {
     fs::create_dir_all(directory).map_err(|error| error.to_string())
 }
 
+/// Removes cover previews on quit; unpacked pages of recent comics are kept.
 pub fn clear_cache(app: &AppHandle) {
-    if let Ok(root) = cache_root(app) {
+    if let Ok(root) = preview_root(app) {
         let _ = fs::remove_dir_all(root);
     }
 }
 
+/// Loads the persistent page cache, dropping records whose pages are gone and folders that no
+/// record points to (left behind by a crash or an older build).
+pub fn load_page_cache(app: &AppHandle, state: &BackendState) {
+    let Ok(root) = pages_root(app) else { return };
+    let records = page_cache::load_index(&root.join(page_cache::INDEX_FILE))
+        .into_iter()
+        .filter(|record| Path::new(&record.directory).is_dir())
+        .map(|record| (record.file_path.clone(), record))
+        .collect::<std::collections::HashMap<_, _>>();
+
+    if let Ok(entries) = fs::read_dir(&root) {
+        let referenced = records.values().map(|record| PathBuf::from(&record.directory)).collect::<Vec<_>>();
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() && !referenced.contains(&path) {
+                let _ = fs::remove_dir_all(path);
+            }
+        }
+    }
+
+    *state.page_cache.lock().expect("page cache lock poisoned") = records;
+}
+
+fn save_page_cache(app: &AppHandle, cache: &std::collections::HashMap<String, CachedComic>) -> Result<(), String> {
+    let root = pages_root(app)?;
+    fs::create_dir_all(&root).map_err(|error| error.to_string())?;
+    page_cache::save_index(&root.join(page_cache::INDEX_FILE), cache.values())
+}
+
 fn ensure_supported(path: &str) -> Result<(), String> {
-    if !is_comic_path(path) { return Err("Unsupported file type. Choose a CBZ or CBR archive.".into()); }
+    if !is_comic_path(path) { return Err("Unsupported file type. Choose a CBZ, CBR or CB7 archive.".into()); }
     Ok(())
 }
 
@@ -143,6 +190,18 @@ fn rar_error(error: unrar::error::UnrarError) -> String {
 
 fn zip_error(error: zip::result::ZipError) -> String {
     format!("Unable to read ZIP archive: {error}")
+}
+
+fn seven_zip_error(error: sevenz_rust2::Error) -> String {
+    format!("Unable to read 7-Zip archive: {error}")
+}
+
+fn seven_zip_entries(path: &str) -> Result<Vec<String>, String> {
+    let archive = SevenZipArchive::open(path).map_err(seven_zip_error)?;
+    Ok(archive.files.iter()
+        .filter(|entry| !entry.is_directory() && entry.has_stream() && is_image(entry.name()))
+        .map(|entry| entry.name().to_string())
+        .collect())
 }
 
 fn rar_entries(path: &str) -> Result<Vec<String>, String> {
@@ -169,6 +228,7 @@ fn archive_images(path: &str) -> Result<Vec<String>, String> {
     let mut names = match archive_kind(path)? {
         ArchiveKind::Rar => rar_entries(path)?,
         ArchiveKind::Zip => zip_entries(path)?,
+        ArchiveKind::SevenZip => seven_zip_entries(path)?,
     };
     sort_natural(&mut names);
     if names.is_empty() { return Err(NO_PAGES.into()); }
@@ -211,6 +271,53 @@ fn extract_rar(path: &str, directory: &Path, names: &[String], cancellation: &At
     Ok(names.iter().map(|name| targets[name.as_str()].to_string_lossy().to_string()).collect())
 }
 
+// A few pages (e.g. a cover) from a non-solid archive are read directly, since each file is
+// compressed separately and the stored order may put the cover last. Otherwise entries are decoded
+// in one pass in stored order, reading through unwanted ones and stopping once every requested page
+// is out: for a solid archive that is the only option, and for a whole comic it is the fastest.
+fn extract_seven_zip(path: &str, directory: &Path, names: &[String], cancellation: &AtomicBool, paused: &AtomicBool) -> Result<Vec<String>, String> {
+    let mut targets = std::collections::HashMap::with_capacity(names.len());
+    for (index, name) in names.iter().enumerate() {
+        targets.insert(name.as_str(), directory.join(page_file_name(index, name)));
+    }
+
+    let mut reader = SevenZipReader::open(path, Password::empty()).map_err(seven_zip_error)?;
+    if !reader.archive().is_solid && names.len() <= DIRECT_READ_LIMIT {
+        for name in names {
+            checkpoint(cancellation, paused)?;
+            let bytes = reader.read_file(name).map_err(seven_zip_error)?;
+            fs::write(&targets[name.as_str()], bytes).map_err(|error| error.to_string())?;
+        }
+        return Ok(names.iter().map(|name| targets[name.as_str()].to_string_lossy().to_string()).collect());
+    }
+
+    let mut remaining = targets.len();
+    let mut interrupted = None;
+    reader.for_each_entries(|entry, data| {
+        if let Err(error) = checkpoint(cancellation, paused) {
+            interrupted = Some(error);
+            return Ok(false);
+        }
+        match targets.get(entry.name()) {
+            Some(target) if !entry.is_directory() => {
+                let mut buffer = Vec::new();
+                data.read_to_end(&mut buffer)?;
+                fs::write(target, buffer)?;
+                remaining -= 1;
+                Ok(remaining > 0)
+            }
+            _ => {
+                std::io::copy(data, &mut std::io::sink())?;
+                Ok(true)
+            }
+        }
+    }).map_err(seven_zip_error)?;
+
+    if let Some(error) = interrupted { return Err(error); }
+    if remaining > 0 { return Err("Some pages in this 7-Zip archive could not be read.".into()); }
+    Ok(names.iter().map(|name| targets[name.as_str()].to_string_lossy().to_string()).collect())
+}
+
 fn extract_zip(path: &str, directory: &Path, names: &[String], cancellation: &AtomicBool, paused: &AtomicBool) -> Result<Vec<String>, String> {
     let file = fs::File::open(path).map_err(|error| error.to_string())?;
     let mut archive = ZipArchive::new(file).map_err(zip_error)?;
@@ -231,6 +338,7 @@ fn extract_archive(path: &str, directory: &Path, names: &[String], cancellation:
     let pages = match archive_kind(path)? {
         ArchiveKind::Rar => extract_rar(path, directory, names, cancellation, paused)?,
         ArchiveKind::Zip => extract_zip(path, directory, names, cancellation, paused)?,
+        ArchiveKind::SevenZip => extract_seven_zip(path, directory, names, cancellation, paused)?,
     };
     if pages.is_empty() { return Err(NO_PAGES.into()); }
     Ok(pages)
@@ -293,10 +401,64 @@ fn cached_pages_exist(entry: &ExtractionResult) -> bool {
     !entry.pages.is_empty() && entry.pages.iter().all(|page| Path::new(page).exists())
 }
 
+// Hidden folders (e.g. .Trash, __MACOSX) are skipped, symlinks are not followed, and the depth is
+// capped so a huge or looping tree can't stall an import.
+fn collect_comics(directory: &Path, depth: usize, output: &mut Vec<String>) {
+    if depth > 12 { return; }
+    let Ok(entries) = fs::read_dir(directory) else { return };
+    let mut found = Vec::new();
+    let mut folders = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') || name == "__MACOSX" { continue; }
+        let Ok(file_type) = entry.file_type() else { continue };
+        let path = entry.path();
+        if file_type.is_dir() {
+            folders.push(path);
+        } else if file_type.is_file() && is_comic_path(&name) {
+            found.push(path.to_string_lossy().to_string());
+        }
+    }
+    sort_natural(&mut found);
+    output.extend(found);
+    folders.sort_by(|left, right| natural_cmp(&left.to_string_lossy(), &right.to_string_lossy()));
+    for folder in folders {
+        collect_comics(&folder, depth + 1, output);
+    }
+}
+
+/// Turns dropped or picked paths into comic archives: folders are searched (recursively), comic
+/// files are kept, everything else is ignored. Order is preserved and duplicates removed.
+pub fn expand_paths(paths: &[String]) -> Vec<String> {
+    let mut output = Vec::new();
+    for path in paths {
+        let candidate = Path::new(path);
+        if candidate.is_dir() {
+            collect_comics(candidate, 0, &mut output);
+        } else if is_comic_path(path) {
+            output.push(path.clone());
+        }
+    }
+    let mut seen = std::collections::HashSet::new();
+    output.retain(|path| seen.insert(path.clone()));
+    output
+}
+
 #[tauri::command]
 pub fn open_file_picker() -> Vec<String> {
-    FileDialog::new().add_filter("Comic Archives", &["cbz", "cbr", "zip", "rar"])
+    FileDialog::new().add_filter("Comic Archives", ARCHIVE_EXTENSIONS)
         .pick_files().unwrap_or_default().into_iter().map(|path| path.to_string_lossy().to_string()).filter(|path| is_comic_path(path)).collect()
+}
+
+#[tauri::command]
+pub fn open_folder_picker() -> Vec<String> {
+    FileDialog::new().set_title("Import a folder of comics")
+        .pick_folders().unwrap_or_default().into_iter().map(|path| path.to_string_lossy().to_string()).collect()
+}
+
+#[tauri::command(async)]
+pub fn expand_comic_paths(paths: Vec<String>) -> Vec<String> {
+    expand_paths(&paths)
 }
 
 // Files handed to the app before the renderer was listening (CLI args, Finder "Open With").
@@ -311,10 +473,12 @@ pub fn get_launch_files(state: State<'_, BackendState>) -> Vec<String> {
 #[tauri::command(async)]
 pub fn inspect_comic(app: AppHandle, file_path: String, state: State<'_, BackendState>) -> Result<ComicInspection, String> {
     ensure_supported(&file_path)?;
-    for cache in [&state.extraction_cache, &state.inspection_cache] {
-        if let Some(cached) = cache.lock().map_err(|_| "cache lock poisoned")?.get(&file_path).filter(|entry| cached_pages_exist(entry)) {
-            return Ok(ComicInspection { title: cached.title.clone(), page_count: cached.page_count, cover_page: cached.pages[0].clone() });
-        }
+    let fingerprint = page_cache::fingerprint(&file_path);
+    if let Some(cached) = state.page_cache.lock().map_err(|_| "cache lock poisoned")?.get(&file_path).filter(|cached| page_cache::is_fresh(cached, fingerprint)) {
+        return Ok(ComicInspection { title: cached.title.clone(), page_count: cached.page_count, cover_page: cached.pages[0].clone() });
+    }
+    if let Some(cached) = state.inspection_cache.lock().map_err(|_| "cache lock poisoned")?.get(&file_path).filter(|entry| cached_pages_exist(entry)) {
+        return Ok(ComicInspection { title: cached.title.clone(), page_count: cached.page_count, cover_page: cached.pages[0].clone() });
     }
 
     let names = archive_images(&file_path)?;
@@ -330,8 +494,15 @@ pub fn inspect_comic(app: AppHandle, file_path: String, state: State<'_, Backend
 #[tauri::command(async)]
 pub fn extract_comic(app: AppHandle, file_path: String, state: State<'_, BackendState>) -> Result<ExtractionResult, String> {
     ensure_supported(&file_path)?;
-    if let Some(cached) = state.extraction_cache.lock().map_err(|_| "cache lock poisoned")?.get(&file_path).filter(|entry| cached_pages_exist(entry)) {
-        return Ok(cached.clone());
+    let fingerprint = page_cache::fingerprint(&file_path);
+    {
+        let mut cache = state.page_cache.lock().map_err(|_| "cache lock poisoned")?;
+        if let Some(cached) = cache.get_mut(&file_path).filter(|cached| page_cache::is_fresh(cached, fingerprint)) {
+            cached.last_used = page_cache::now();
+            let result = cached.result();
+            let _ = save_page_cache(&app, &cache);
+            return Ok(result);
+        }
     }
 
     let cancellation = Arc::new(AtomicBool::new(false));
@@ -349,7 +520,26 @@ pub fn extract_comic(app: AppHandle, file_path: String, state: State<'_, Backend
     let pages = pages.inspect_err(|_| { let _ = fs::remove_dir_all(&directory); })?;
 
     let result = ExtractionResult { directory: directory.to_string_lossy().to_string(), page_count: pages.len() as u32, pages, title: title_from_path(&file_path) };
-    state.extraction_cache.lock().map_err(|_| "cache lock poisoned")?.insert(file_path.clone(), result.clone());
+    {
+        let mut cache = state.page_cache.lock().map_err(|_| "cache lock poisoned")?;
+        let (source_size, source_modified) = fingerprint.unwrap_or_default();
+        cache.insert(file_path.clone(), CachedComic {
+            file_path: file_path.clone(),
+            directory: result.directory.clone(),
+            pages: result.pages.clone(),
+            title: result.title.clone(),
+            page_count: result.page_count,
+            source_size,
+            source_modified,
+            last_used: page_cache::now(),
+        });
+        for evicted in page_cache::evictions(cache.values(), page_cache::MAX_CACHED_COMICS, &file_path) {
+            if let Some(record) = cache.remove(&evicted) {
+                let _ = fs::remove_dir_all(record.directory);
+            }
+        }
+        let _ = save_page_cache(&app, &cache);
+    }
     {
         let mut library = state.library.lock().map_err(|_| "library lock poisoned")?;
         if let Some(entry) = library.iter_mut().find(|entry| entry.file_path == file_path) {
@@ -415,10 +605,15 @@ pub fn save_progress(app: AppHandle, file_path: String, page: u32, state: State<
 #[tauri::command(async)]
 pub fn remove_from_library(app: AppHandle, file_path: String, state: State<'_, BackendState>) -> Result<(), String> {
     state.library.lock().map_err(|_| "library lock poisoned")?.retain(|entry| entry.file_path != file_path);
-    for cache in [&state.extraction_cache, &state.inspection_cache] {
-        if let Some(cached) = cache.lock().map_err(|_| "cache lock poisoned")?.remove(&file_path) {
-            let _ = fs::remove_dir_all(cached.directory);
+    {
+        let mut cache = state.page_cache.lock().map_err(|_| "cache lock poisoned")?;
+        if let Some(record) = cache.remove(&file_path) {
+            let _ = fs::remove_dir_all(record.directory);
+            let _ = save_page_cache(&app, &cache);
         }
+    }
+    if let Some(cached) = state.inspection_cache.lock().map_err(|_| "cache lock poisoned")?.remove(&file_path) {
+        let _ = fs::remove_dir_all(cached.directory);
     }
     persist_state(&app, &state)
 }
@@ -474,9 +669,68 @@ mod tests {
         assert_eq!(archive_kind(&write("rar4.cbz", b"Rar!\x1a\x07\x00rest")), Ok(ArchiveKind::Rar));
         assert_eq!(archive_kind(&write("rar5.zip", b"Rar!\x1a\x07\x01\x00rest")), Ok(ArchiveKind::Rar));
         assert_eq!(archive_kind(&write("zip.rar", b"PK\x03\x04rest")), Ok(ArchiveKind::Zip));
-        assert!(archive_kind(&write("seven.cbr", b"7z\xbc\xaf\x27\x1crest")).unwrap_err().contains("7-Zip"));
+        assert_eq!(archive_kind(&write("seven.cbr", b"7z\xbc\xaf\x27\x1crest")), Ok(ArchiveKind::SevenZip));
+        assert_eq!(archive_kind(&write("unknown.cb7", b"MZ-sfx")), Ok(ArchiveKind::SevenZip));
         assert_eq!(archive_kind(&write("unknown.cbr", b"MZ-sfx")), Ok(ArchiveKind::Rar));
         assert_eq!(archive_kind(&write("tiny.cbz", b"P")), Ok(ArchiveKind::Zip));
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn opens_cb7_archives() {
+        let directory = scratch_dir("cb7");
+        let source = directory.join("source");
+        fs::create_dir_all(source.join("Issue 1")).unwrap();
+        for page in ["page10.jpg", "page2.jpg", "page1.jpg"] {
+            fs::write(source.join("Issue 1").join(page), page).unwrap();
+        }
+        fs::write(source.join("Issue 1").join("info.txt"), "not a page").unwrap();
+        let non_solid = directory.join("non-solid.cb7");
+        sevenz_rust2::compress_to_path(&source, &non_solid).unwrap();
+        let solid = directory.join("solid.cb7");
+        let mut writer = sevenz_rust2::ArchiveWriter::create(&solid).unwrap();
+        writer.push_source_path(&source, |_| true).unwrap();
+        writer.finish().unwrap();
+
+        for (archive, expect_solid) in [(non_solid, false), (solid, true)] {
+            let archive = archive.to_string_lossy().to_string();
+            assert_eq!(SevenZipArchive::open(&archive).unwrap().is_solid, expect_solid, "{archive}");
+            assert_eq!(archive_kind(&archive), Ok(ArchiveKind::SevenZip));
+            let names = archive_images(&archive).unwrap();
+            assert_eq!(names, ["Issue 1/page1.jpg", "Issue 1/page2.jpg", "Issue 1/page10.jpg"]);
+
+            let out = directory.join("out");
+            reset_directory(&out).unwrap();
+            let cover = extract_archive(&archive, &out, &names[..1], &AtomicBool::new(false), &AtomicBool::new(false)).unwrap();
+            assert_eq!(fs::read_to_string(&cover[0]).unwrap(), "page1.jpg");
+            reset_directory(&out).unwrap();
+            let pages = extract_archive(&archive, &out, &names, &AtomicBool::new(false), &AtomicBool::new(false)).unwrap();
+            assert_eq!(pages.iter().map(|page| fs::read_to_string(page).unwrap()).collect::<Vec<_>>(), ["page1.jpg", "page2.jpg", "page10.jpg"]);
+
+            let cancelled = extract_archive(&archive, &out, &names, &AtomicBool::new(true), &AtomicBool::new(false));
+            assert_eq!(cancelled, Err(CANCELLED.to_string()));
+        }
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn expands_folders_into_comics() {
+        let directory = scratch_dir("folders");
+        let series = directory.join("Series");
+        fs::create_dir_all(series.join("Volume 2")).unwrap();
+        fs::create_dir_all(series.join(".hidden")).unwrap();
+        fs::create_dir_all(series.join("__MACOSX")).unwrap();
+        for file in ["Issue 10.cbz", "Issue 2.cbr", "notes.txt", "Volume 2/Issue 1.cb7", ".hidden/secret.cbz", "__MACOSX/Issue 2.cbr"] {
+            fs::write(series.join(file), b"x").unwrap();
+        }
+        let loose = directory.join("Loose.cbz");
+        fs::write(&loose, b"x").unwrap();
+
+        let series_path = series.to_string_lossy().to_string();
+        let loose_path = loose.to_string_lossy().to_string();
+        let expanded = expand_paths(&[series_path.clone(), loose_path.clone(), directory.join("readme.md").to_string_lossy().to_string(), loose_path.clone()]);
+        let relative = expanded.iter().map(|path| path.strip_prefix(&format!("{}/", directory.to_string_lossy())).unwrap().to_string()).collect::<Vec<_>>();
+        assert_eq!(relative, ["Series/Issue 2.cbr", "Series/Issue 10.cbz", "Series/Volume 2/Issue 1.cb7", "Loose.cbz"]);
         let _ = fs::remove_dir_all(directory);
     }
 

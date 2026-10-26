@@ -49,6 +49,8 @@ function createTauriApi() {
 
   return {
     openFilePicker: () => invoke(TAURI_COMMANDS.openFilePicker),
+    openFolderPicker: () => invoke(TAURI_COMMANDS.openFolderPicker),
+    expandComicPaths: (paths) => invoke(TAURI_COMMANDS.expandComicPaths, { paths }),
     inspectComic: (filePath) => invoke(TAURI_COMMANDS.inspectComic, { filePath }).then(normalizeInspection),
     extractComic: (filePath) => invoke(TAURI_COMMANDS.extractComic, { filePath }).then(normalizeExtraction),
     cancelExtraction: (filePath) => { void invoke(TAURI_COMMANDS.cancelExtraction, { filePath }); },

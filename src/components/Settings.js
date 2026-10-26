@@ -1,5 +1,6 @@
 import { UPDATE_SETTINGS } from '../context/actions';
 import { useLibraryContext } from '../context/AppContext';
+import { READING_DIRECTIONS, READING_LAYOUTS } from '../reader/pagination';
 import { themes } from '../theme/themes';
 import appIcon from '../../buildResources/icon.png';
 
@@ -110,6 +111,34 @@ function Settings({ libraryApi }) {
                 <option value="fit-height">Fit Height</option>
                 <option value="original">Original</option>
               </select>
+            </section>
+
+            <section className="border border-white/6 bg-surface p-6">
+              <p className="label-caps text-muted">Reading Layout</p>
+              <select
+                value={settings.readingLayout || 'scroll'}
+                onChange={(event) => updateSettings({ readingLayout: event.target.value })}
+                aria-label="Reading layout"
+                className="mt-4 w-full border border-white/6 bg-elevated px-4 py-3 text-sm text-primary outline-none"
+              >
+                {READING_LAYOUTS.map((layout) => (
+                  <option key={layout.id} value={layout.id}>
+                    {layout.id === 'scroll' ? 'Scroll (continuous)' : layout.id === 'single' ? 'Single page' : 'Two-page spread'}
+                  </option>
+                ))}
+              </select>
+              <p className="label-caps mt-6 text-muted">Reading Direction</p>
+              <select
+                value={settings.readingDirection || 'ltr'}
+                onChange={(event) => updateSettings({ readingDirection: event.target.value })}
+                aria-label="Reading direction"
+                className="mt-4 w-full border border-white/6 bg-elevated px-4 py-3 text-sm text-primary outline-none"
+              >
+                {READING_DIRECTIONS.map((readingDirection) => (
+                  <option key={readingDirection.id} value={readingDirection.id}>{readingDirection.label}</option>
+                ))}
+              </select>
+              <p className="mt-3 text-sm leading-6 text-secondary">Direction applies to single-page and spread layouts. Press L while reading to switch layouts.</p>
             </section>
 
             <section className="border border-white/6 bg-surface p-6">

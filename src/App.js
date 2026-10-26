@@ -42,7 +42,7 @@ function App() {
       <div className="flex h-screen flex-col bg-base text-primary">
         <WindowPane />
         <div className="min-h-0 flex flex-1">
-          <Sidebar onImport={libraryApi.pickFiles} />
+          <Sidebar onImport={libraryApi.pickFiles} onImportFolder={libraryApi.pickFolder} />
           <main className="min-w-0 flex-1 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),transparent_28%)]">
             {readerState.view === 'settings' ? (
               <Settings libraryApi={libraryApi} />

@@ -53,6 +53,7 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle();
             commands::library::load_state(handle, &handle.state::<BackendState>());
+            commands::library::load_page_cache(handle, &handle.state::<BackendState>());
             tauri::async_runtime::spawn(commands::updates::check(handle.clone()));
             Ok(())
         })
@@ -60,6 +61,8 @@ pub fn run() {
             commands::app::get_app_info,
             commands::app::get_boot_payload,
             commands::library::open_file_picker,
+            commands::library::open_folder_picker,
+            commands::library::expand_comic_paths,
             commands::library::get_launch_files,
             commands::library::inspect_comic,
             commands::library::extract_comic,
