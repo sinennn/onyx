@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod app;
 pub mod library;
+pub mod page_cache;
 pub mod updates;
 pub mod window;
 
@@ -31,11 +32,25 @@ pub struct Settings {
     pub remember_reading_position: bool,
     pub show_progress_bars: bool,
     pub theme: String,
+    /// "scroll" (one long column), "single" (one page at a time) or "spread" (two-page spreads).
+    pub reading_layout: String,
+    /// "ltr" or "rtl" (manga); applies to the single and spread layouts.
+    pub reading_direction: String,
+    /// "recent", "title" or "progress".
+    pub library_sort: String,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { default_fit_mode: "fit-width".into(), remember_reading_position: true, show_progress_bars: true, theme: "onyx".into() }
+        Self {
+            default_fit_mode: "fit-width".into(),
+            remember_reading_position: true,
+            show_progress_bars: true,
+            theme: "onyx".into(),
+            reading_layout: "scroll".into(),
+            reading_direction: "ltr".into(),
+            library_sort: "recent".into(),
+        }
     }
 }
 
@@ -46,6 +61,15 @@ impl Settings {
         }
         if self.theme.is_empty() {
             self.theme = "onyx".into();
+        }
+        if !matches!(self.reading_layout.as_str(), "scroll" | "single" | "spread") {
+            self.reading_layout = "scroll".into();
+        }
+        if !matches!(self.reading_direction.as_str(), "ltr" | "rtl") {
+            self.reading_direction = "ltr".into();
+        }
+        if !matches!(self.library_sort.as_str(), "recent" | "title" | "progress") {
+            self.library_sort = "recent".into();
         }
         self
     }
@@ -63,7 +87,8 @@ pub struct BootPayload {
 pub struct BackendState {
     pub library: Mutex<Vec<LibraryEntry>>,
     pub settings: Mutex<Settings>,
-    pub extraction_cache: Mutex<HashMap<String, ExtractionResult>>,
+    /// Fully unpacked comics, persisted between launches (see page_cache).
+    pub page_cache: Mutex<HashMap<String, page_cache::CachedComic>>,
     pub inspection_cache: Mutex<HashMap<String, ExtractionResult>>,
     pub cancellation: Mutex<HashMap<String, Arc<AtomicBool>>>,
     pub renderer_ready: AtomicBool,
@@ -103,6 +128,18 @@ pub struct UpdateStatus {
 #[cfg(test)]
 mod tests {
     use super::LibraryEntry;
+
+    #[test]
+    fn settings_fall_back_to_defaults_for_unknown_values() {
+        let settings: super::Settings = serde_json::from_str(r#"{"readingLayout":"carousel","readingDirection":"up","librarySort":"random","theme":""}"#).unwrap();
+        let settings = settings.sanitized();
+        assert_eq!((settings.reading_layout.as_str(), settings.reading_direction.as_str(), settings.library_sort.as_str()), ("scroll", "ltr", "recent"));
+        assert_eq!(settings.theme, "onyx");
+
+        let older: super::Settings = serde_json::from_str(r#"{"defaultFitMode":"fit-height"}"#).unwrap();
+        assert_eq!(older.reading_layout, "scroll", "settings saved before these fields existed get the defaults");
+        assert_eq!(older.default_fit_mode, "fit-height");
+    }
 
     #[test]
     fn library_entry_uses_renderer_field_names() {

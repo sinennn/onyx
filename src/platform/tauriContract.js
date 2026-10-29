@@ -3,6 +3,8 @@ export const TAURI_COMMANDS = Object.freeze({
   getAppInfo: 'get_app_info',
   getBootPayload: 'get_boot_payload',
   openFilePicker: 'open_file_picker',
+  openFolderPicker: 'open_folder_picker',
+  expandComicPaths: 'expand_comic_paths',
   getLaunchFiles: 'get_launch_files',
   inspectComic: 'inspect_comic',
   extractComic: 'extract_comic',

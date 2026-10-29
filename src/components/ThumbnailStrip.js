@@ -28,7 +28,7 @@ function ThumbnailCell({ page, index, isActive, onSelect }) {
   );
 }
 
-function ThumbnailStrip({ pages, currentPage, open, onSelect }) {
+function ThumbnailStrip({ pages, currentPage, activePages, open, onSelect }) {
   if (!open) {
     return null;
   }
@@ -41,7 +41,7 @@ function ThumbnailStrip({ pages, currentPage, open, onSelect }) {
             key={`${page}-${index}`}
             page={page}
             index={index}
-            isActive={index === currentPage}
+            isActive={activePages ? activePages.includes(index) : index === currentPage}
             onSelect={onSelect}
           />
         ))}
